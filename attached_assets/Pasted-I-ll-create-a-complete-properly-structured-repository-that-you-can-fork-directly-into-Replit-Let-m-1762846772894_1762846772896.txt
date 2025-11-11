@@ -1,0 +1,184 @@
+I'll create a complete, properly structured repository that you can fork directly into Replit. Let me organize this with the correct file structure and fix any potential issues:
+
+## 🚀 COMPLETE REPLIT-READY REPOSITORY
+
+### Repository Structure
+agentburn-solana-trader/
+├── .replit
+├── replit.nix
+├── run.sh
+├── README.md
+├── backend/
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs
+│       ├── trading_engine.rs
+│       ├── solana_integration.rs
+│       ├── risk_management.rs
+│       ├── ml_models.rs
+│       └── api.rs
+└── frontend/
+    ├── index.html
+    ├── package.json
+    ├── vite.config.ts
+    ├── tsconfig.json
+    ├── tsconfig.node.json
+    └── src/
+        ├── main.tsx
+        ├── App.tsx
+        ├── App.css
+        └── components/
+            ├── Dashboard.tsx
+            ├── TradingView.tsx
+            ├── Portfolio.tsx
+            └── Performance.tsx
+### Root Level Files
+
+#### .replit
+language = "bash"
+run = "./run.sh"
+
+[nix]
+channel = "stable-22_11"
+
+[env]
+PATH = "/home/runner/${REPL_SLUG}/backend/target/release:/home/runner/${REPL_SLUG}/node_modules/.bin:${PATH}"
+RUST_BACKTRACE = "1"
+
+[gitHubImport]
+requiredFiles = [".replit", "replit.nix", "run.sh"]
+
+[packager]
+language = "rust"
+
+[packager.features]
+preview = true
+#### replit.nix
+{ pkgs }: {
+  deps = [
+    pkgs.rustc
+    pkgs.cargo
+    pkgs.nodejs-18_x
+    pkgs.pkg-config
+    pkgs.openssl
+    pkgs.rustfmt
+    pkgs.rust-analyzer
+  ];
+}
+#### run.sh
+#!/bin/bash
+
+set -e
+
+echo "🚀 Starting AgentBurn Solana Trader..."
+echo "📦 Installing dependencies..."
+
+# Install frontend dependencies
+echo "📋 Installing frontend dependencies..."
+cd frontend
+if [ ! -d "node_modules" ]; then
+    npm install
+fi
+cd ..
+
+# Build backend
+echo "🦀 Building Rust backend..."
+cd backend
+cargo build --release
+cd ..
+
+echo "✅ Build complete!"
+echo ""
+
+# Start backend
+echo "🌐 Starting backend server on port 8080..."
+cd backend
+./target/release/agentburn-backend &
+BACKEND_PID=$!
+cd ..
+
+# Wait for backend to start
+sleep 3
+
+# Start frontend
+echo "⚛️ Starting frontend development server on port 3000..."
+cd frontend
+npm run dev &
+FRONTEND_PID=$!
+cd ..
+
+# Function to cleanup processes
+cleanup() {
+    echo ""
+    echo "🛑 Shutting down servers..."
+    kill $BACKEND_PID $FRONTEND_PID 2>/dev/null || true
+    exit 0
+}
+
+# Set trap to cleanup on exit
+trap cleanup INT TERM
+
+echo ""
+echo "🎉 AgentBurn Solana Trader is running!"
+echo "📊 Frontend: https://$(echo $REPL_SLUG).$(echo $REPL_OWNER).repl.co"
+echo "🔧 Backend API: http://localhost:8080"
+echo ""
+echo "Press Ctrl+C to stop servers"
+
+# Wait indefinitely
+wait
+#### README.md
+# 🔥 AgentBurn Solana Trader
+
+A sophisticated AI-powered trading system for Solana, built with Rust and React.
+
+## 🚀 Features
+
+- **AI-Powered Trading**: Machine learning models for market prediction
+- **Risk Management**: Dynamic position sizing and drawdown control
+- **Real-time Dashboard**: Live market data and portfolio tracking
+- **Solana Integration**: Ready for DEX trading and wallet integration
+- **Performance Analytics**: Comprehensive trading metrics and charts
+
+## 🛠️ Tech Stack
+
+- **Backend**: Rust, Tokio, Warp
+- **Frontend**: React, TypeScript, Vite, Recharts
+- **Blockchain**: Solana (simulated for development)
+- **AI/ML**: Custom trading models
+
+## 🏃‍♂️ Quick Start
+
+### Running in Replit
+
+1. Fork this repo to Replit
+2. The application will automatically build and start
+3. Access your app at the generated URL
+
+### Local Development
+
+bash
+# Start backend
+cd backend
+cargo run
+
+# Start frontend (in new terminal)
+cd frontend
+npm install
+npm run dev
+
+## 📁 Project Structure
+
+agentburn-solana-trader/
+├── backend/          # Rust trading engine
+├── frontend/         # React dashboard
+├── .replit          # Replit configuration
+├── replit.nix       # Nix dependencies
+└── run.sh           # Startup script
+`
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Create a `.env` file in the backend directory:

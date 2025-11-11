@@ -1,0 +1,123 @@
+(winning_trades as f64 / self.trade_history.len() as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let mut metrics = HashMap::new();
+        metrics.insert("total_return".to_string(), total_return);
+        metrics.insert("current_capital".to_string(), self.current_capital);
+        metrics.insert("max_drawdown".to_string(), self.calculate_drawdown() * 100.0);
+        metrics.insert("sharpe_ratio".to_string(), 1.5); // Simulated
+        metrics.insert("win_rate".to_string(), win_rate);
+        metrics.insert("daily_pnl".to_string(), self.daily_pnl);
+        metrics.insert("total_pnl".to_string(), self.total_pnl);
+        metrics.insert("trade_count".to_string(), self.trade_history.len() as f64);
+        
+        metrics
+    }
+}
+
+### **backend/src/ml_models.rs**
+rust
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone)]
+pub struct TradingPredictor {
+    pub model_loaded: bool,
+}
+
+impl TradingPredictor {
+    pub fn new() -> Self {
+        Self {
+            model_loaded: true,
+        }
+    }
+    
+    pub async fn predict(&self, features: &[f64]) -> (f64, f64) {
+        // Simulate ML prediction - in real implementation, this would use a trained model
+        let confidence = 0.5 + (features.iter().sum::<f64>().sin().abs() * 0.3);
+        let price_change = (features.iter().sum::<f64>().cos() * 0.02);
+        
+        (confidence.min(0.95).max(0.1), price_change)
+    }
+    
+    pub fn generate_features(&self, market_data: &super::trading_engine::MarketData) -> Vec<f64> {
+        // Simulate feature engineering
+        vec![
+            market_data.price / 1000.0,
+            market_data.volume / 1000000.0,
+            market_data.spread * 100.0,
+            (chrono::Utc::now().timestamp() % 86400) as f64 / 86400.0, // Time of day
+        ]
+    }
+}
+
+### **backend/src/api.rs**
+rust
+use warp::Filter;
+use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ApiResponse<T> {
+    pub success: bool,
+    pub data: T,
+    pub message: String,
+}
+
+impl<T> ApiResponse<T> {
+    pub fn new(data: T, message: &str) -> Self {
+        Self {
+            success: true,
+            data,
+            message: message.to_string(),
+        }
+    }
+    
+    pub fn error(message: &str) -> ApiResponse<()> {
+        ApiResponse {
+            success: false,
+            data: (),
+            message: message.to_string(),
+        }
+    }
+}
+
+pub async fn start_server(
+    engine: Arc<Mutex<super::trading_engine::TradingEngine>>,
+    risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
+) {
+    log::info!("🌐 Starting Warp server on :8080");
+    
+    // CORS setup
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_headers(vec!["content-type", "authorization"])
+        .allow_methods(vec!["GET", "POST", "PUT", "DELETE"]);
+    
+    // Health check
+    let health = warp::path("health")
+        .and(warp::get())
+        .map(|| {
+            warp::reply::json(&ApiResponse::new("OK", "Server is healthy"))
+        });
+    
+    // Portfolio endpoint
+    let portfolio_route = {
+        let engine = engine.clone();
+        let risk_manager = risk_manager.clone();
+        
+        warp::path("portfolio")
+            .and(warp::get())
+            .and_then(move || {
+                let engine = engine.clone();
+                let risk_manager = risk_manager.clone();
+                
+                async move {
+                    let engine_lock = engine.lock().await;
+                    let risk_lock = risk_manager.lock().await;
+                    
+                    let portfolio_data = engine_lock.get_portfolio_data();
+                    let metrics = risk_lock.get_performance_metrics();

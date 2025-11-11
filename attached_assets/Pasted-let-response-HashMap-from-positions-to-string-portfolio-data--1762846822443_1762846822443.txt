@@ -1,0 +1,80 @@
+let response = HashMap::from([
+                        ("positions".to_string(), portfolio_data),
+                        ("total_value".to_string(), metrics["current_capital"]),
+                        ("cash".to_string(), engine_lock.current_balance),
+                        ("daily_pnl".to_string(), metrics["daily_pnl"]),
+                        ("total_pnl".to_string(), metrics["total_pnl"]),
+                    ]);
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(response, "Portfolio data retrieved")))
+                }
+            })
+    };
+    
+    // Performance metrics
+    let performance_route = {
+        let risk_manager = risk_manager.clone();
+        
+        warp::path("performance")
+            .and(warp::get())
+            .and_then(move || {
+                let risk_manager = risk_manager.clone();
+                
+                async move {
+                    let risk_lock = risk_manager.lock().await;
+                    let metrics = risk_lock.get_performance_metrics();
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(metrics, "Performance metrics retrieved")))
+                }
+            })
+    };
+    
+    // Market data endpoint
+    let market_data_route = {
+        let engine = engine.clone();
+        
+        warp::path("market-data")
+            .and(warp::get())
+            .and_then(move || {
+                let engine = engine.clone();
+                
+                async move {
+                    let engine_lock = engine.lock().await;
+                    
+                    // Generate mock market data based on current state
+                    let mut market_data = Vec::new();
+                    
+                    for (symbol, data) in &engine_lock.market_state {
+                        if let Some(latest) = data.back() {
+                            market_data.push(HashMap::from([
+                                ("symbol".to_string(), symbol.clone()),
+                                ("price".to_string(), format!("{:.2}", latest.price)),
+                                ("change".to_string(), "0.0".to_string()), // Simplified
+                                ("volume".to_string(), format!("{:.0}", latest.volume)),
+                            ]));
+                        }
+                    }
+                    
+                    // Add some default data if no market data exists
+                    if market_data.is_empty() {
+                        market_data = vec![
+                            HashMap::from([
+                                ("symbol".to_string(), "SOL/USDC".to_string()),
+                                ("price".to_string(), "105.50".to_string()),
+                                ("change".to_string(), "2.5".to_string()),
+                                ("volume".to_string(), "2500000".to_string()),
+                            ]),
+                            HashMap::from([
+                                ("symbol".to_string(), "BTC/USDC".to_string()),
+                                ("price".to_string(), "51200.00".to_string()),
+                                ("change".to_string(), "1.2".to_string()),
+                                ("volume".to_string(), "150000000".to_string()),
+                            ]),
+                            HashMap::from([
+                                ("symbol".to_string(), "ETH/USDC".to_string()),
+                                ("price".to_string(), "3050.00".to_string()),
+                                ("change".to_string(), "0.8".to_string()),
+                                ("volume".to_string(), "75000000".to_string()),
+                            ]),
+                        ];
+                    }

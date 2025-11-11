@@ -1,0 +1,152 @@
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+WALLET_KEY_PATH=wallet.json
+TRADING_ENABLED=false
+### Solana Integration
+
+To enable real Solana trading:
+
+1. Set TRADING_ENABLED=true
+2. Add your wallet keypair
+3. Configure RPC endpoint
+
+## 📊 API Endpoints
+
+- GET /health - Health check
+- GET /portfolio - Portfolio data
+- GET /performance - Trading metrics
+- GET /market-data - Live market data
+- GET /signals - Trading signals
+
+## 🚨 Risk Warning
+
+This is experimental software. Use at your own risk. Always test with small amounts and understand the code before trading real funds.
+
+## 📄 License
+
+MIT License - see LICENSE file for details
+
+## 🦀 **BACKEND CODE**
+
+### **backend/Cargo.toml**
+toml
+[package]
+name = "agentburn-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+warp = "0.3"
+futures = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
+tokio-tungstenite = "0.20"
+tungstenite = "0.20"
+base64 = "0.21"
+hex = "0.4"
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4"] }
+async-trait = "0.1"
+log = "0.4"
+pretty_env_logger = "0.5"
+
+# For future Solana integration
+# solana-client = "1.17"
+# solana-sdk = "1.17"
+
+### **backend/src/main.rs**
+rust
+mod trading_engine;
+mod solana_integration;
+mod risk_management;
+mod ml_models;
+mod api;
+
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+#[tokio::main]
+async fn main() {
+    pretty_env_logger::init();
+    log::info!("🚀 Starting AgentBurn Solana Trading System...");
+
+    // Initialize shared state
+    let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new()));
+    let risk_manager = Arc::new(Mutex::new(risk_management::RiskManager::new(10000.0, 0.1)));
+    let solana_client = Arc::new(Mutex::new(solana_integration::SolanaClient::new()));
+
+    // Start market data simulation
+    let market_engine = trading_engine.clone();
+    tokio::spawn(async move {
+        solana_integration::simulate_market_data(market_engine).await;
+    });
+
+    // Start trading signal generation
+    let signal_engine = trading_engine.clone();
+    let signal_risk = risk_manager.clone();
+    tokio::spawn(async move {
+        trading_engine::generate_trading_signals(signal_engine, signal_risk).await;
+    });
+
+    // Start API server
+    let api_engine = trading_engine.clone();
+    let api_risk = risk_manager.clone();
+    log::info!("🌐 Starting Web API on port 8080...");
+    api::start_server(api_engine, api_risk).await;
+}
+
+### **backend/src/trading_engine.rs**
+rust
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, VecDeque};
+use chrono::Utc;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketData {
+    pub symbol: String,
+    pub price: f64,
+    pub volume: f64,
+    pub timestamp: i64,
+    pub bid: f64,
+    pub ask: f64,
+    pub spread: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TradingSignal {
+    pub id: String,
+    pub action: TradeAction,
+    pub symbol: String,
+    pub price: f64,
+    pub confidence: f64,
+    pub size: f64,
+    pub stop_loss: f64,
+    pub take_profit: f64,
+    pub timestamp: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TradeAction {
+    Buy,
+    Sell,
+    Hold,
+}
+
+#[derive(Debug, Clone)]
+pub struct TradingEngine {
+    pub market_state: HashMap<String, VecDeque<MarketData>>,
+    pub portfolio: HashMap<String, f64>,
+    pub initial_balance: f64,
+    pub current_balance: f64,
+    pub trade_history: Vec<TradingSignal>,
+}
+
+impl TradingEngine {
+    pub fn new() -> Self {
+        Self {
+            market_state: HashMap::new(),
+            portfolio: HashMap::new(),
