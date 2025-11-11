@@ -54,25 +54,33 @@ pub async fn simulate_market_data(engine: Arc<Mutex<super::trading_engine::Tradi
     
     loop {
         interval.tick().await;
-        let mut rng = rand::thread_rng();
         
-        for symbol in &symbols {
-            let base_price = prices.get(*symbol).unwrap();
-            let price_change = (rng.gen::<f64>() - 0.5) * base_price * 0.02;
-            let new_price = (base_price + price_change).max(base_price * 0.5).min(base_price * 1.5);
-            
-            prices.insert(symbol.to_string(), new_price);
-            
-            let market_data = super::trading_engine::MarketData {
-                symbol: symbol.to_string(),
-                price: new_price,
-                volume: rng.gen::<f64>() * 1000000.0,
-                timestamp: chrono::Utc::now().timestamp(),
-                bid: new_price * 0.999,
-                ask: new_price * 1.001,
-                spread: new_price * 0.002,
-            };
-            
+        let mut market_updates = Vec::new();
+        
+        {
+            let mut rng = rand::thread_rng();
+            for symbol in &symbols {
+                let base_price = prices.get(*symbol).unwrap();
+                let price_change = (rng.gen::<f64>() - 0.5) * base_price * 0.02;
+                let new_price = (base_price + price_change).max(base_price * 0.5).min(base_price * 1.5);
+                
+                prices.insert(symbol.to_string(), new_price);
+                
+                let market_data = super::trading_engine::MarketData {
+                    symbol: symbol.to_string(),
+                    price: new_price,
+                    volume: rng.gen::<f64>() * 1000000.0,
+                    timestamp: chrono::Utc::now().timestamp(),
+                    bid: new_price * 0.999,
+                    ask: new_price * 1.001,
+                    spread: new_price * 0.002,
+                };
+                
+                market_updates.push(market_data);
+            }
+        }
+        
+        for market_data in market_updates {
             let mut engine_lock = engine.lock().await;
             if let Some(signal) = engine_lock.process_market_data(market_data) {
                 log::info!("🎯 Generated trading signal: {:?}", signal);
