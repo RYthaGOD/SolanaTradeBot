@@ -52,8 +52,8 @@ async fn main() {
         .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string());
     let marketplace = Arc::new(signal_platform::SignalMarketplace::new(rpc_url.clone()));
     
-    // Initialize 5 Specialized Provider Agents
-    log::info!("🤖 Initializing 5 Specialized Signal Providers...");
+    // Initialize 6 Specialized Provider Agents
+    log::info!("🤖 Initializing 6 Specialized Signal Providers...");
     let providers = specialized_providers::initialize_all_providers(
         marketplace.clone(),
         rpc_url.clone(),

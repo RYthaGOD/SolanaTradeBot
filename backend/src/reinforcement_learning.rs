@@ -401,6 +401,11 @@ impl RLAgent {
         action_type: &str,
         confidence: f64,
     ) -> f64 {
+        // Prevent division by zero
+        if entry_price <= 0.0 {
+            return 0.0;
+        }
+
         let price_change = (exit_price - entry_price) / entry_price;
 
         let raw_reward = match action_type {
@@ -527,6 +532,13 @@ mod tests {
         
         let loss = RLAgent::calculate_reward(100.0, 90.0, "BUY", 0.8);
         assert!(loss < 0.0);
+        
+        // Test division by zero protection
+        let zero_reward = RLAgent::calculate_reward(0.0, 110.0, "BUY", 0.8);
+        assert_eq!(zero_reward, 0.0);
+        
+        let negative_reward = RLAgent::calculate_reward(-10.0, 110.0, "BUY", 0.8);
+        assert_eq!(negative_reward, 0.0);
     }
 
     #[tokio::test]

@@ -742,6 +742,11 @@ pub async fn initialize_all_providers(
             "Signal Trader".to_string(),
             ProviderType::SignalTrader,
         ),
+        (
+            "master_analyzer".to_string(),
+            "Master Analyzer".to_string(),
+            ProviderType::MasterAnalyzer,
+        ),
     ];
 
     let mut provider_agents = Vec::new();
