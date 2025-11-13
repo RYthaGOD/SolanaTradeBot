@@ -3,6 +3,14 @@ name = "agentburn-backend"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "agentburn-backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "setup_api_key"
+path = "src/bin/setup_api_key.rs"
+
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }

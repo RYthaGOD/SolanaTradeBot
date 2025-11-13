@@ -16,6 +16,10 @@ mod dex_screener;
 mod pumpfun;
 mod autonomous_agent;
 mod signal_platform;
+mod specialized_providers;
+mod reinforcement_learning;
+mod secure_config;
+mod enhanced_marketplace;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -43,16 +47,36 @@ async fn main() {
         trading_engine::generate_trading_signals(signal_engine, signal_risk).await;
     });
 
-    // Start autonomous trading agent
-    let agent_engine = trading_engine.clone();
-    let agent_risk = risk_manager.clone();
+    // Initialize Signal Marketplace
     let rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string());
+    let marketplace = Arc::new(signal_platform::SignalMarketplace::new(rpc_url.clone()));
     
-    log::info!("🤖 Starting Autonomous Trading Agent...");
+    // Initialize 5 Specialized Provider Agents
+    log::info!("🤖 Initializing 5 Specialized Signal Providers...");
+    let providers = specialized_providers::initialize_all_providers(
+        marketplace.clone(),
+        rpc_url.clone(),
+    ).await;
+    
+    log::info!("✅ Initialized {} specialized providers", providers.len());
+    
+    // Start each specialized provider in its own task
+    for provider in providers {
+        tokio::spawn(async move {
+            provider.run().await;
+        });
+    }
+    
+    // Start autonomous trading agent (legacy)
+    let agent_engine = trading_engine.clone();
+    let agent_risk = risk_manager.clone();
+    let agent_rpc = rpc_url.clone();
+    
+    log::info!("🤖 Starting Legacy Autonomous Trading Agent...");
     tokio::spawn(async move {
         let agent = autonomous_agent::AutonomousAgent::new(
-            rpc_url,
+            agent_rpc,
             agent_engine,
             agent_risk,
         );
