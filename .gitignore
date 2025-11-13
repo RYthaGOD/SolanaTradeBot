@@ -12,6 +12,12 @@ frontend/package-lock.json
 .env
 .env.local
 
+# Wallet files (keep private!)
+*.keypair
+*.wallet
+id.json
+wallet.json
+
 # Logs
 *.log
 npm-debug.log*
