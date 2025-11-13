@@ -1,6 +1,6 @@
 use warp::Filter;
 use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
