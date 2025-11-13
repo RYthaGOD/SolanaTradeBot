@@ -29,7 +29,7 @@ pub struct TradingSignal {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TradeAction {
     Buy,
     Sell,

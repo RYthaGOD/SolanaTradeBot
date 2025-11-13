@@ -1099,6 +1099,102 @@ pub async fn start_server(
             })
     };
     
+    // Execute trade endpoint  
+    let execute_trade_route = {
+        let engine = engine.clone();
+        
+        warp::path!("trade" / "execute")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |signal: crate::trading_engine::TradingSignal| {
+                let engine = engine.clone();
+                
+                async move {
+                    let mut engine_lock = engine.lock().await;
+                    let success = engine_lock.execute_trade(&signal).await;
+                    
+                    let mut response = HashMap::new();
+                    response.insert("success".to_string(), success.to_string());
+                    response.insert("signal_id".to_string(), signal.id.clone());
+                    response.insert("symbol".to_string(), signal.symbol);
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        response,
+                        if success { "Trade executed successfully" } else { "Trade execution failed" }
+                    )))
+                }
+            })
+    };
+    
+    // Solana client balance endpoint
+    let solana_balance_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("solana" / "balance")
+            .and(warp::get())
+            .and_then(move || {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let client_lock = solana_client.lock().await;
+                    let balance = client_lock.get_balance();
+                    
+                    let mut response = HashMap::new();
+                    response.insert("balance_sol".to_string(), format!("{:.6}", balance));
+                    response.insert("wallet_address".to_string(), 
+                        client_lock.get_wallet_address().unwrap_or_else(|| "None".to_string()));
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        response,
+                        "Balance retrieved"
+                    )))
+                }
+            })
+    };
+    
+    // Risk management record trade endpoint
+    let record_trade_route = {
+        let risk_manager = risk_manager.clone();
+        
+        warp::path!("risk" / "record")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |signal: crate::trading_engine::TradingSignal| {
+                let risk_manager = risk_manager.clone();
+                
+                async move {
+                    let mut risk_lock = risk_manager.lock().await;
+                    let pnl = if signal.action == crate::trading_engine::TradeAction::Sell {
+                        signal.size * signal.price * 0.02 // Assume 2% profit
+                    } else {
+                        0.0
+                    };
+                    
+                    let trade = crate::risk_management::Trade {
+                        id: signal.id.clone(),
+                        symbol: signal.symbol.clone(),
+                        action: format!("{:?}", signal.action),
+                        size: signal.size,
+                        price: signal.price,
+                        timestamp: signal.timestamp,
+                        pnl,
+                    };
+                    
+                    risk_lock.record_trade(trade);
+                    
+                    let mut response = HashMap::new();
+                    response.insert("recorded".to_string(), "true".to_string());
+                    response.insert("symbol".to_string(), signal.symbol);
+                    response.insert("pnl".to_string(), format!("{:.2}", pnl));
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        response,
+                        "Trade recorded in risk management"
+                    )))
+                }
+            })
+    };
+    
     let routes = health
         .or(portfolio_route)
         .or(performance_route)
@@ -1134,6 +1230,9 @@ pub async fn start_server(
         .or(ml_predict_route)
         .or(fee_estimate_route)
         .or(validate_wallet_route)
+        .or(execute_trade_route)
+        .or(solana_balance_route)
+        .or(record_trade_route)
         .with(cors)
         .with(warp::log("api"));
     
