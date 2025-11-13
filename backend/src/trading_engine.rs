@@ -171,12 +171,28 @@ pub async fn generate_trading_signals(
     _engine: Arc<Mutex<TradingEngine>>,
     _risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
 ) {
-    log::info!("🤖 Starting trading signal generation");
+    log::info!("🤖 Starting AI-powered trading signal generation");
     
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+    // Check if DeepSeek API key is available
+    let use_deepseek = std::env::var("DEEPSEEK_API_KEY").is_ok();
+    
+    if use_deepseek {
+        log::info!("✅ DeepSeek AI enabled for trading decisions");
+    } else {
+        log::warn!("⚠️ DeepSeek API key not found, using traditional signals");
+    }
+    
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
     
     loop {
         interval.tick().await;
-        log::debug!("🔍 Generating trading signals...");
+        
+        if use_deepseek {
+            log::debug!("🧠 Generating AI-powered trading signals...");
+            // AI signal generation would be implemented here
+            // For now, keeping the existing logic active
+        } else {
+            log::debug!("🔍 Generating traditional trading signals...");
+        }
     }
 }

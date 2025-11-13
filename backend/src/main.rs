@@ -3,6 +3,14 @@ mod solana_integration;
 mod risk_management;
 mod ml_models;
 mod api;
+mod jupiter_integration;
+mod security;
+mod websocket;
+mod deepseek_ai;
+mod error_handling;
+mod fee_optimization;
+mod key_manager;
+mod database;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;

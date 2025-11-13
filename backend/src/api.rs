@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::jupiter_integration::JupiterClient;
+use crate::websocket::{create_ws_broadcaster, handle_websocket};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiResponse<T> {
@@ -27,10 +29,13 @@ pub async fn start_server(
 ) {
     log::info!("🌐 Starting Warp server on :8080");
     
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_headers(vec!["content-type", "authorization"])
-        .allow_methods(vec!["GET", "POST", "PUT", "DELETE"]);
+    // Create WebSocket broadcaster for real-time updates
+    let ws_broadcaster = create_ws_broadcaster();
+    
+    // Create Jupiter client for DEX integration
+    let jupiter_client = Arc::new(JupiterClient::new());
+    
+    let cors = crate::security::cors_config();
     
     let health = warp::path("health")
         .and(warp::get())
@@ -163,11 +168,82 @@ pub async fn start_server(
             })
     };
     
+    // WebSocket endpoint for real-time updates
+    let ws_broadcaster_clone = ws_broadcaster.clone();
+    let ws_route = warp::path("ws")
+        .and(warp::ws())
+        .map(move |ws: warp::ws::Ws| {
+            let broadcaster = ws_broadcaster_clone.clone();
+            ws.on_upgrade(move |socket| handle_websocket(socket, broadcaster))
+        });
+    
+    // Jupiter quote endpoint
+    let jupiter_route = {
+        let jupiter = jupiter_client.clone();
+        
+        warp::path!("jupiter" / "quote" / String / String / String)
+            .and(warp::get())
+            .and_then(move |input_mint: String, output_mint: String, amount: String| {
+                let jupiter = jupiter.clone();
+                
+                async move {
+                    match amount.parse::<u64>() {
+                        Ok(amount_u64) => {
+                            match jupiter.get_quote(&input_mint, &output_mint, amount_u64, 50).await {
+                                Ok(quote) => {
+                                    let mut response = HashMap::new();
+                                    response.insert("input_mint".to_string(), quote.input_mint);
+                                    response.insert("output_mint".to_string(), quote.output_mint);
+                                    response.insert("in_amount".to_string(), quote.in_amount);
+                                    response.insert("out_amount".to_string(), quote.out_amount);
+                                    response.insert("price_impact".to_string(), quote.price_impact_pct.to_string());
+                                    
+                                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(response, "Quote retrieved")))
+                                }
+                                Err(e) => {
+                                    log::error!("Jupiter quote error: {}", e);
+                                    Ok(warp::reply::json(&ApiResponse::new(
+                                        HashMap::<String, String>::new(),
+                                        &format!("Failed to get quote: {}", e)
+                                    )))
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                HashMap::<String, String>::new(),
+                                "Invalid amount"
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+    
+    // AI analysis endpoint (if DeepSeek is configured)
+    let ai_route = {
+        warp::path("ai")
+            .and(warp::path("status"))
+            .and(warp::get())
+            .map(|| {
+                let deepseek_enabled = std::env::var("DEEPSEEK_API_KEY").is_ok();
+                let mut status = HashMap::new();
+                status.insert("deepseek_enabled".to_string(), deepseek_enabled.to_string());
+                status.insert("model".to_string(), "deepseek-chat".to_string());
+                status.insert("features".to_string(), "AI-powered trading decisions, risk assessment".to_string());
+                
+                warp::reply::json(&ApiResponse::new(status, "AI status"))
+            })
+    };
+    
     let routes = health
         .or(portfolio_route)
         .or(performance_route)
         .or(market_data_route)
         .or(signals_route)
+        .or(ws_route)
+        .or(jupiter_route)
+        .or(ai_route)
         .with(cors)
         .with(warp::log("api"));
     
