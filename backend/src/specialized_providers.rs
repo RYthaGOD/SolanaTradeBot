@@ -47,7 +47,7 @@ impl SpecializedProvider {
             provider_name,
             provider_type,
             marketplace,
-            oracle_client: Arc::new(SwitchboardClient::new(rpc_url)),
+            oracle_client: Arc::new(SwitchboardClient::new(rpc_url.clone(), std::env::var("SOLANA_RPC_URL").is_ok())),
             dex_client: Arc::new(DexScreenerClient::new()),
             pumpfun_client: Arc::new(PumpFunClient::new()),
             jupiter_client: Arc::new(JupiterClient::new()),

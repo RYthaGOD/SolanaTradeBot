@@ -43,7 +43,8 @@ pub async fn start_server(
     // Create Switchboard Oracle client
     let rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string());
-    let switchboard_client = Arc::new(SwitchboardClient::new(rpc_url.clone()));
+    let use_real_oracle = std::env::var("SOLANA_RPC_URL").is_ok();
+    let switchboard_client = Arc::new(SwitchboardClient::new(rpc_url.clone(), use_real_oracle));
     
     // Create DEX Screener client
     let dex_screener_client = Arc::new(DexScreenerClient::new());
@@ -281,6 +282,9 @@ pub async fn start_server(
                                 confidence: 0.0,
                                 timestamp: 0,
                                 slot: 0,
+                                min_price: 0.0,
+                                max_price: 0.0,
+                                price_change_24h: None,
                             };
                             Ok(warp::reply::json(&ApiResponse::new(
                                 empty_feed,

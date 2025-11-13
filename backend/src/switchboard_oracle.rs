@@ -137,7 +137,7 @@ impl SwitchboardClient {
         let confidence = price * 0.01; // 1% confidence interval
         
         Ok(OracleFeed {
-            feed_address: feed_address.clone(),
+            feed_address: feed_address.to_string(),
             symbol: symbol.to_string(),
             price,
             confidence,
@@ -214,8 +214,9 @@ pub struct OracleAggregator {
 
 impl OracleAggregator {
     pub fn new(rpc_url: String) -> Self {
+        let use_real_oracle = std::env::var("SOLANA_RPC_URL").is_ok();
         Self {
-            switchboard: SwitchboardClient::new(rpc_url),
+            switchboard: SwitchboardClient::new(rpc_url, use_real_oracle),
         }
     }
     

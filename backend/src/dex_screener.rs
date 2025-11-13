@@ -135,28 +135,41 @@ impl DexScreenerClient {
     
     /// Check and enforce rate limit (300 requests per minute)
     async fn check_rate_limit(&self) -> Result<(), Box<dyn Error>> {
-        let mut last_time = self.last_request_time.lock().unwrap();
-        let mut count = self.request_count.lock().unwrap();
+        let wait_time = {
+            let mut last_time = self.last_request_time.lock().unwrap();
+            let mut count = self.request_count.lock().unwrap();
+            
+            let now = SystemTime::now();
+            let elapsed = now.duration_since(*last_time).unwrap_or(Duration::from_secs(60));
+            
+            // Reset counter after 1 minute
+            if elapsed >= Duration::from_secs(60) {
+                *count = 0;
+                *last_time = now;
+            }
+            
+            // Check rate limit
+            let wait = if *count >= 300 {
+                let wait_time = Duration::from_secs(60) - elapsed;
+                log::warn!("Rate limit reached, waiting {:?}", wait_time);
+                Some(wait_time)
+            } else {
+                *count += 1;
+                None
+            };
+            
+            wait
+        }; // MutexGuards are dropped here
         
-        let now = SystemTime::now();
-        let elapsed = now.duration_since(*last_time).unwrap_or(Duration::from_secs(60));
-        
-        // Reset counter after 1 minute
-        if elapsed >= Duration::from_secs(60) {
-            *count = 0;
-            *last_time = now;
-        }
-        
-        // Check rate limit
-        if *count >= 300 {
-            let wait_time = Duration::from_secs(60) - elapsed;
-            log::warn!("Rate limit reached, waiting {:?}", wait_time);
-            tokio::time::sleep(wait_time).await;
+        // Await outside the mutex lock
+        if let Some(wait) = wait_time {
+            tokio::time::sleep(wait).await;
+            let mut last_time = self.last_request_time.lock().unwrap();
+            let mut count = self.request_count.lock().unwrap();
             *count = 0;
             *last_time = SystemTime::now();
         }
         
-        *count += 1;
         Ok(())
     }
     
