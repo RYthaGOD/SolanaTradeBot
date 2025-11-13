@@ -20,6 +20,7 @@ mod specialized_providers;
 mod reinforcement_learning;
 mod secure_config;
 mod enhanced_marketplace;
+mod historical_data;
 
 #[cfg(test)]
 mod algorithm_tests;

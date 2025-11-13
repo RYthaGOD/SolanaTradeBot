@@ -6,6 +6,7 @@ use chrono::Utc;
 
 use crate::deepseek_ai::{DeepSeekClient, TradingDecision};
 use crate::signal_platform::TradingSignalData;
+use crate::historical_data::{HistoricalDataManager, HistoricalFeatures, PriceDataPoint};
 
 /// Experience replay buffer for reinforcement learning
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,7 +116,7 @@ impl AgentPerformance {
     }
 }
 
-/// Reinforcement Learning Agent with DeepSeek LLM
+/// Reinforcement Learning Agent with DeepSeek LLM and Historical Data
 pub struct RLAgent {
     pub agent_id: String,
     pub provider_type: String,
@@ -126,6 +127,7 @@ pub struct RLAgent {
     pub(crate) epsilon: f64, // Exploration rate
     gamma: f64,   // Discount factor
     max_buffer_size: usize,
+    historical_data: Arc<Mutex<HistoricalDataManager>>, // Historical price data
 }
 
 impl RLAgent {
@@ -142,15 +144,30 @@ impl RLAgent {
             epsilon: 0.2, // 20% exploration
             gamma: 0.95,  // Future reward discount
             max_buffer_size: 1000,
+            historical_data: Arc::new(Mutex::new(HistoricalDataManager::new(1000))), // Keep 1000 data points per symbol
         }
     }
+    
+    /// Add historical price data for training
+    pub async fn add_historical_data(&self, symbol: String, data_point: PriceDataPoint) {
+        let mut historical = self.historical_data.lock().await;
+        historical.add_price_data(symbol, data_point);
+    }
+    
+    /// Get historical features for a symbol
+    pub async fn get_historical_features(&self, symbol: &str) -> Option<HistoricalFeatures> {
+        let historical = self.historical_data.lock().await;
+        historical.get_features(symbol)
+    }
 
-    /// Make a decision using DeepSeek LLM with reinforcement learning
+    /// Make a decision using DeepSeek LLM with reinforcement learning and historical data
     pub async fn make_decision(
         &self,
         state: &MarketState,
         historical_experiences: &[Experience],
     ) -> Result<Action, String> {
+        // Get historical features for enhanced decision making
+        let historical_features = self.get_historical_features(&state.symbol).await;
         // Get performance metrics for context
         let performance = self.performance.lock().await;
         let current_win_rate = performance.win_rate;
@@ -169,8 +186,8 @@ impl RLAgent {
 
         // Exploitation: Use learned knowledge
         if let Some(ref deepseek) = self.deepseek_client {
-            // Use DeepSeek LLM for enhanced decision making
-            match self.ask_deepseek_with_learning(deepseek, state, current_win_rate, avg_reward, learning_rate, historical_experiences).await {
+            // Use DeepSeek LLM for enhanced decision making with historical data
+            match self.ask_deepseek_with_learning(deepseek, state, current_win_rate, avg_reward, learning_rate, historical_experiences, historical_features.as_ref()).await {
                 Ok(decision) => {
                     return Ok(Action {
                         action_type: decision.action,
@@ -190,7 +207,7 @@ impl RLAgent {
         self.make_q_learning_decision(state).await
     }
 
-    /// Ask DeepSeek LLM with learning context
+    /// Ask DeepSeek LLM with learning context and historical data
     async fn ask_deepseek_with_learning(
         &self,
         deepseek: &DeepSeekClient,
@@ -199,6 +216,7 @@ impl RLAgent {
         avg_reward: f64,
         learning_rate: f64,
         historical_experiences: &[Experience],
+        historical_features: Option<&HistoricalFeatures>,
     ) -> Result<TradingDecision, Box<dyn std::error::Error>> {
         // Analyze recent experiences for patterns
         let recent_successes: Vec<&Experience> = historical_experiences.iter()
@@ -213,6 +231,39 @@ impl RLAgent {
             .take(5)
             .collect();
 
+        // Build enhanced learning context with historical data
+        let historical_context = if let Some(features) = historical_features {
+            format!(
+                "\nHISTORICAL DATA ANALYSIS:\n\
+                 - Data Points: {}\n\
+                 - 5m Change: {:.2}%\n\
+                 - 1h Change: {:.2}%\n\
+                 - 4h Change: {:.2}%\n\
+                 - 24h Change: {:.2}%\n\
+                 - Volatility (20-period): {:.2}%\n\
+                 - RSI (14-period): {}\n\
+                 - Volume Ratio: {:.2}x average\n\
+                 - Trend Strength: {:.2}%\n\
+                 - EMA 10: ${:.2}\n\
+                 - EMA 20: ${:.2}\n\
+                 - SMA 50: ${:.2}",
+                features.data_points,
+                features.price_changes.change_5m,
+                features.price_changes.change_1h,
+                features.price_changes.change_4h,
+                features.price_changes.change_24h,
+                features.volatility,
+                features.rsi.map(|r| format!("{:.1}", r)).unwrap_or_else(|| "N/A".to_string()),
+                features.volume_ratio,
+                features.trend_strength,
+                features.moving_averages.ema_10.unwrap_or(0.0),
+                features.moving_averages.ema_20.unwrap_or(0.0),
+                features.moving_averages.sma_50.unwrap_or(0.0)
+            )
+        } else {
+            "\nHISTORICAL DATA ANALYSIS: Not available".to_string()
+        };
+        
         // Build learning context for DeepSeek
         let _learning_context = format!(
             "AGENT PERFORMANCE CONTEXT:\n\
@@ -230,9 +281,10 @@ impl RLAgent {
              - 1h Change: {:.2}%\n\
              - 24h Change: {:.2}%\n\
              - Sentiment: {:.1}/100\n\
-             - Volatility: {:.2}%\n\n\
-             Based on your learning history, what action should you take? \
-             Prioritize strategies that have worked well and avoid patterns that failed.",
+             - Volatility: {:.2}%{}\n\n\
+             Based on your learning history AND historical data patterns, what action should you take? \
+             Prioritize strategies that have worked well and avoid patterns that failed. \
+             Use the historical technical indicators to make more informed predictions.",
             self.provider_type,
             win_rate * 100.0,
             avg_reward,
@@ -246,7 +298,8 @@ impl RLAgent {
             state.price_change_1h,
             state.price_change_24h,
             state.sentiment_score,
-            state.volatility
+            state.volatility,
+            historical_context
         );
 
         // Call DeepSeek with minimal history for context
