@@ -340,7 +340,7 @@ impl RLAgent {
 
     /// Generate exploratory action (exploration strategy)
     fn generate_exploratory_action(&self, state: &MarketState) -> Action {
-        let actions = vec!["BUY", "SELL", "HOLD"];
+        let actions = ["BUY", "SELL", "HOLD"];
         let action_type = actions[rand::random::<usize>() % actions.len()].to_string();
         
         Action {
@@ -433,7 +433,7 @@ impl RLAgent {
         // Q-learning update rule: Q(s,a) = Q(s,a) + α[r + γ*max(Q(s',a')) - Q(s,a)]
         let next_max_q = if let Some(ref next_state) = experience.next_state {
             let next_state_key = self.encode_state(next_state);
-            let actions = vec!["BUY", "SELL", "HOLD"];
+            let actions = ["BUY", "SELL", "HOLD"];
             actions.iter()
                 .map(|a| {
                     let key = format!("{}:{}", next_state_key, a);

@@ -95,7 +95,7 @@ mod tests {
         let pda = TreasuryPDA::derive_default(&authority).unwrap();
         
         assert_eq!(pda.authority, authority);
-        assert!(pda.bump <= 255);
+        // bump is u8, so it's always <= 255 by definition
         assert_ne!(pda.address, authority); // PDA should be different from authority
     }
 

@@ -122,7 +122,7 @@ impl SpecializedProvider {
             .map_err(|e| format!("PumpFun error: {}", e))?;
 
         // Get oracle data for price validation
-        let oracle_feeds = self.oracle_client.fetch_multiple_feeds(&vec![
+        let oracle_feeds = self.oracle_client.fetch_multiple_feeds(&[
             "SOL/USD".to_string(),
         ]).await.map_err(|e| format!("Oracle error: {}", e))?;
 
@@ -235,7 +235,7 @@ impl SpecializedProvider {
         let mut signals = Vec::new();
 
         // Get oracle data for perps analysis
-        let feeds = self.oracle_client.fetch_multiple_feeds(&vec![
+        let feeds = self.oracle_client.fetch_multiple_feeds(&[
             "SOL/USD".to_string(),
             "BTC/USD".to_string(),
             "ETH/USD".to_string(),
@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     fn test_provider_types() {
-        let types = vec![
+        let types = [
             ProviderType::MemecoinMonitor,
             ProviderType::OracleMonitor,
             ProviderType::PerpsMonitor,
