@@ -43,12 +43,41 @@ async fn main() {
     let rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
     
+    // Initialize Database for persistence
+    log::info!("💾 Initializing Database...");
+    let _database = Arc::new(Mutex::new(database::Database::new("trades.db")));
+    
+    // Initialize Key Manager for secure wallet operations
+    log::info!("🔐 Initializing Key Manager...");
+    let _key_manager = Arc::new(Mutex::new(key_manager::KeyManager::new(false))); // encryption disabled for dev
+    
+    // Initialize Security Rate Limiter
+    log::info!("🛡️ Initializing Security Rate Limiter...");
+    let _rate_limiter = Arc::new(Mutex::new(security::RateLimiter::new(100, std::time::Duration::from_secs(60))));
+    
+    // Initialize DeepSeek AI Client (if API key is set)
+    let _deepseek_client = if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
+        log::info!("🧠 Initializing DeepSeek AI Client...");
+        Some(Arc::new(Mutex::new(deepseek_ai::DeepSeekClient::new(api_key))))
+    } else {
+        log::warn!("⚠️ DEEPSEEK_API_KEY not set - AI analysis disabled");
+        None
+    };
+    
+    // Initialize Error Handling Circuit Breaker
+    log::info!("⚡ Initializing Circuit Breaker...");
+    let _circuit_breaker = Arc::new(Mutex::new(
+        error_handling::CircuitBreaker::new(5, 3, std::time::Duration::from_secs(60))
+    ));
+    
     // Initialize Solana client with wallet and PDA integration
     let solana_client = Arc::new(Mutex::new(
         solana_integration::SolanaClient::new_with_integration(rpc_url.clone()).await
     ));
 
     let risk_manager = Arc::new(Mutex::new(risk_management::RiskManager::new(10000.0, 0.1)));
+    
+    // Use new_default for trading engine (includes built-in risk manager)
     let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new(risk_manager.clone())));
 
     // Start market data simulation
