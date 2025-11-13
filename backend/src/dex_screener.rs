@@ -193,45 +193,74 @@ impl DexScreenerClient {
             }
             
             let mut signals = Vec::new();
-            let mut score = 0.0;
             
-            // Check for momentum signals
-            if pair.price_change.m5 > 5.0 {
-                signals.push("Strong 5m momentum".to_string());
-                score += 20.0;
+            // Improved opportunity scoring with weighted factors (0-100 normalized)
+            let momentum_score: f64;
+            let volume_score: f64;
+            let liquidity_score: f64;
+            
+            // Momentum analysis (30% weight) - normalized to 0-100
+            let momentum_5m = (pair.price_change.m5 / 10.0).min(1.0).max(0.0); // 10% = 100 score
+            let momentum_1h = (pair.price_change.h1 / 15.0).min(1.0).max(0.0); // 15% = 100 score
+            let momentum_6h = (pair.price_change.h6 / 25.0).min(1.0).max(0.0); // 25% = 100 score
+            momentum_score = (momentum_5m * 40.0 + momentum_1h * 35.0 + momentum_6h * 25.0);
+            
+            if momentum_5m > 0.5 {
+                signals.push(format!("Strong 5m momentum: +{:.1}%", pair.price_change.m5));
+            }
+            if momentum_1h > 0.67 {
+                signals.push(format!("Strong 1h trend: +{:.1}%", pair.price_change.h1));
+            }
+            if momentum_6h > 0.8 {
+                signals.push(format!("Strong 6h uptrend: +{:.1}%", pair.price_change.h6));
             }
             
-            if pair.price_change.h1 > 10.0 {
-                signals.push("Strong 1h trend".to_string());
-                score += 25.0;
-            }
+            // Volume analysis (25% weight)
+            let vol_ratio_1h = if pair.volume.h6 > 0.0 {
+                (pair.volume.h1 / (pair.volume.h6 / 6.0)).min(3.0) / 3.0
+            } else {
+                0.0
+            };
+            let vol_ratio_5m = if pair.volume.h1 > 0.0 {
+                (pair.volume.m5 / (pair.volume.h1 / 12.0)).min(4.0) / 4.0
+            } else {
+                0.0
+            };
+            volume_score = (vol_ratio_1h * 50.0 + vol_ratio_5m * 50.0);
             
-            if pair.price_change.h6 > 20.0 {
-                signals.push("Strong 6h uptrend".to_string());
-                score += 30.0;
-            }
-            
-            // Volume analysis
-            if pair.volume.h1 > pair.volume.h6 / 6.0 * 1.5 {
+            if vol_ratio_1h > 0.5 {
                 signals.push("Increasing volume".to_string());
-                score += 15.0;
+            }
+            if vol_ratio_5m > 0.5 {
+                signals.push(format!("Volume spike: {:.1}x avg", vol_ratio_5m * 4.0));
             }
             
-            if pair.volume.m5 > pair.volume.h1 / 12.0 * 2.0 {
-                signals.push("Volume spike".to_string());
-                score += 20.0;
-            }
-            
-            // Liquidity check
-            if liquidity_usd > 10000.0 {
-                signals.push("Good liquidity".to_string());
-                score += 10.0;
-            }
+            // Liquidity depth analysis (25% weight)
+            let liquidity_ratio = (liquidity_usd.log10() / 5.0).min(1.0).max(0.0); // Log scale
+            liquidity_score = liquidity_ratio * 100.0;
             
             if liquidity_usd > 50000.0 {
-                signals.push("Excellent liquidity".to_string());
-                score += 10.0;
+                signals.push(format!("Excellent liquidity: ${:.0}K", liquidity_usd / 1000.0));
+            } else if liquidity_usd > 10000.0 {
+                signals.push(format!("Good liquidity: ${:.0}K", liquidity_usd / 1000.0));
             }
+            
+            // Composite score with weighted factors
+            let score = (momentum_score * 0.30) + (volume_score * 0.25) + (liquidity_score * 0.25);
+            
+            // Add sentiment bonus (20% weight) - derived from price action consistency
+            let sentiment_bonus = if pair.price_change.m5 > 0.0 
+                && pair.price_change.h1 > 0.0 
+                && pair.price_change.h6 > 0.0 {
+                20.0 // All timeframes bullish
+            } else if (pair.price_change.m5 > 0.0 && pair.price_change.h1 > 0.0) 
+                || (pair.price_change.h1 > 0.0 && pair.price_change.h6 > 0.0) {
+                10.0 // Partially bullish
+            } else {
+                0.0
+            };
+            
+            let final_score = (score + sentiment_bonus).min(100.0);
             
             // Only include opportunities with signals
             if !signals.is_empty() {
@@ -246,7 +275,7 @@ impl DexScreenerClient {
                     price_change_1h: pair.price_change.h1,
                     price_change_6h: pair.price_change.h6,
                     price_change_24h: pair.price_change.h24,
-                    opportunity_score: score,
+                    opportunity_score: final_score,
                     signals,
                 });
             }

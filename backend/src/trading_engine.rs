@@ -75,10 +75,24 @@ impl TradingEngine {
         
         if symbol_data.len() >= 20 {
             let prices: Vec<f64> = symbol_data.iter().map(|d| d.price).collect();
-            let sma_10: f64 = prices[prices.len()-10..].iter().sum::<f64>() / 10.0;
-            let sma_20: f64 = prices.iter().sum::<f64>() / prices.len() as f64;
+            let volumes: Vec<f64> = symbol_data.iter().map(|d| d.volume).collect();
             
-            if sma_10 > sma_20 * 1.02 && self.current_balance > data.price {
+            // Use EMA instead of SMA for better responsiveness
+            let ema_10 = Self::calculate_ema_static(&prices[prices.len()-10..], 10);
+            let ema_20 = Self::calculate_ema_static(&prices, 20);
+            
+            // Calculate ATR for volatility-adjusted threshold
+            let atr = Self::calculate_atr_static(symbol_data, 14);
+            let volatility_threshold = (atr / data.price) * 100.0; // Convert to percentage
+            let adaptive_threshold = volatility_threshold.max(1.5).min(3.0); // 1.5% to 3%
+            
+            // Volume confirmation (current volume > average)
+            let avg_volume = volumes.iter().sum::<f64>() / volumes.len() as f64;
+            let volume_confirmed = data.volume > avg_volume * 1.2;
+            
+            if ema_10 > ema_20 * (1.0 + adaptive_threshold / 100.0) 
+                && self.current_balance > data.price 
+                && volume_confirmed {
                 let signal = TradingSignal {
                     id: uuid::Uuid::new_v4().to_string(),
                     action: TradeAction::Buy,
@@ -92,7 +106,7 @@ impl TradingEngine {
                 };
                 self.trade_history.push(signal.clone());
                 return Some(signal);
-            } else if sma_10 < sma_20 * 0.98 {
+            } else if ema_10 < ema_20 * (1.0 - adaptive_threshold / 100.0) && volume_confirmed {
                 if let Some(&position) = self.portfolio.get(&data.symbol) {
                     if position > 0.0 {
                         let position_size = self.calculate_position_size(0.6, data.price).await;
@@ -216,6 +230,50 @@ impl TradingEngine {
         let mut data = self.portfolio.clone();
         data.insert("CASH".to_string(), self.current_balance);
         data
+    }
+    
+    /// Calculate Exponential Moving Average (more responsive than SMA)
+    pub(crate) fn calculate_ema_static(prices: &[f64], period: usize) -> f64 {
+        if prices.is_empty() {
+            return 0.0;
+        }
+        
+        let multiplier = 2.0 / (period as f64 + 1.0);
+        let mut ema = prices[0];
+        
+        for price in prices.iter().skip(1) {
+            ema = (price * multiplier) + (ema * (1.0 - multiplier));
+        }
+        
+        ema
+    }
+    
+    /// Calculate Average True Range for volatility measurement
+    pub(crate) fn calculate_atr_static(data: &VecDeque<MarketData>, period: usize) -> f64 {
+        if data.len() < period + 1 {
+            return 0.0;
+        }
+        
+        let mut true_ranges = Vec::new();
+        
+        for i in 1..data.len() {
+            let high = data[i].price.max(data[i-1].price);
+            let low = data[i].price.min(data[i-1].price);
+            let prev_close = data[i-1].price;
+            
+            let tr = (high - low)
+                .max((high - prev_close).abs())
+                .max((low - prev_close).abs());
+            
+            true_ranges.push(tr);
+        }
+        
+        if true_ranges.len() >= period {
+            let atr_slice = &true_ranges[true_ranges.len()-period..];
+            atr_slice.iter().sum::<f64>() / period as f64
+        } else {
+            0.0
+        }
     }
 }
 

@@ -121,9 +121,9 @@ pub struct RLAgent {
     pub provider_type: String,
     deepseek_client: Option<Arc<DeepSeekClient>>,
     experience_buffer: Arc<Mutex<VecDeque<Experience>>>,
-    performance: Arc<Mutex<AgentPerformance>>,
+    pub(crate) performance: Arc<Mutex<AgentPerformance>>,
     q_table: Arc<Mutex<HashMap<String, f64>>>, // Simple Q-learning table
-    epsilon: f64, // Exploration rate
+    pub(crate) epsilon: f64, // Exploration rate
     gamma: f64,   // Discount factor
     max_buffer_size: usize,
 }
@@ -214,7 +214,7 @@ impl RLAgent {
             .collect();
 
         // Build learning context for DeepSeek
-        let learning_context = format!(
+        let _learning_context = format!(
             "AGENT PERFORMANCE CONTEXT:\n\
              - Provider Type: {}\n\
              - Current Win Rate: {:.1}%\n\
@@ -324,15 +324,16 @@ impl RLAgent {
         })
     }
 
-    /// Encode state for Q-table
-    fn encode_state(&self, state: &MarketState) -> String {
-        // Discretize continuous values
-        let price_bucket = (state.price / 10.0).floor() as i32;
-        let change_bucket = (state.price_change_1h / 2.0).floor() as i32;
-        let sentiment_bucket = (state.sentiment_score / 20.0).floor() as i32;
+    /// Encode state for Q-table (improved with finer granularity)
+    pub(crate) fn encode_state(&self, state: &MarketState) -> String {
+        // Discretize continuous values with finer buckets for better accuracy
+        let price_bucket = (state.price / 5.0).floor() as i32; // Finer: 5 instead of 10
+        let change_bucket = (state.price_change_1h / 1.0).floor() as i32; // Finer: 1% instead of 2%
+        let sentiment_bucket = (state.sentiment_score / 10.0).floor() as i32; // Finer: 10 instead of 20
+        let volume_bucket = (state.volume.log10() / 0.5).floor() as i32; // Add volume dimension
 
-        format!("{}:{}:{}:{}", 
-            state.symbol, price_bucket, change_bucket, sentiment_bucket)
+        format!("{}:{}:{}:{}:{}", 
+            state.symbol, price_bucket, change_bucket, sentiment_bucket, volume_bucket)
     }
 
     /// Record experience and learn from it
@@ -435,9 +436,26 @@ impl RLAgent {
             .collect()
     }
 
-    /// Decay exploration rate over time (anneal epsilon)
-    pub fn decay_exploration(&mut self) {
-        self.epsilon = (self.epsilon * 0.995).max(0.05); // Minimum 5% exploration
+    /// Adaptive exploration decay based on performance
+    pub async fn decay_exploration(&mut self) {
+        let performance = self.performance.lock().await;
+        let win_rate = performance.win_rate;
+        drop(performance);
+        
+        // Adaptive epsilon decay
+        if win_rate > 0.6 {
+            // Doing well, reduce exploration more aggressively
+            self.epsilon = (self.epsilon * 0.99).max(0.03); // Min 3% exploration
+        } else if win_rate < 0.4 {
+            // Struggling, maintain higher exploration
+            self.epsilon = (self.epsilon * 0.995).max(0.10); // Min 10% exploration
+        } else {
+            // Normal decay
+            self.epsilon = (self.epsilon * 0.997).max(0.05); // Min 5% exploration
+        }
+        
+        log::debug!("Agent {} epsilon decayed to {:.3}, win_rate: {:.2}%", 
+                    self.agent_id, self.epsilon, win_rate * 100.0);
     }
 }
 

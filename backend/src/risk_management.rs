@@ -54,15 +54,62 @@ impl RiskManager {
     }
     
     pub fn calculate_position_size(&self, confidence: f64, price: f64) -> f64 {
-        let kelly_fraction = (confidence * 2.0 - 1.0).max(0.0);
-        let max_position_value = self.current_capital * kelly_fraction * 0.1;
-        let shares = max_position_value / price;
+        // Improved Kelly Criterion with win rate consideration
+        let historical_win_rate = if self.trade_history.len() > 10 {
+            let wins = self.trade_history.iter().filter(|t| t.pnl > 0.0).count();
+            (wins as f64 / self.trade_history.len() as f64).max(0.5)
+        } else {
+            0.55 // Default win rate assumption
+        };
+        
+        // Kelly formula: f = (bp - q) / b where b=1, p=win_rate, q=1-win_rate
+        let kelly_fraction = ((historical_win_rate * 2.0) - 1.0).max(0.0);
+        
+        // Apply confidence multiplier and safety factor (50% Kelly)
+        let adjusted_kelly = kelly_fraction * confidence * 0.5;
+        
+        // Calculate portfolio heat (total exposure)
+        let total_exposure: f64 = self.position_sizes.values().sum();
+        let available_capacity = (self.current_capital * 0.3) - total_exposure; // Max 30% total exposure
+        
+        // Position size limited by available capacity and individual position limit (10%)
+        let max_position_value = (self.current_capital * adjusted_kelly).min(self.current_capital * 0.1);
+        let capacity_limited = max_position_value.min(available_capacity.max(0.0));
+        
+        let shares = capacity_limited / price;
         shares.max(0.0)
     }
     
     pub fn calculate_drawdown(&self) -> f64 {
         if self.peak_capital > 0.0 {
             (self.peak_capital - self.current_capital) / self.peak_capital
+        } else {
+            0.0
+        }
+    }
+    
+    /// Calculate time-weighted drawdown (recent losses weighted more heavily)
+    pub fn calculate_time_weighted_drawdown(&self) -> f64 {
+        if self.trade_history.len() < 2 {
+            return 0.0;
+        }
+        
+        let now = chrono::Utc::now().timestamp();
+        let mut weighted_sum = 0.0;
+        let mut weight_sum = 0.0;
+        
+        for trade in self.trade_history.iter().rev().take(20) {
+            let age_hours = ((now - trade.timestamp) / 3600).max(1) as f64;
+            let weight = 1.0 / age_hours.sqrt(); // Recent trades weighted more
+            
+            if trade.pnl < 0.0 {
+                weighted_sum += trade.pnl.abs() * weight;
+            }
+            weight_sum += weight;
+        }
+        
+        if weight_sum > 0.0 && self.peak_capital > 0.0 {
+            (weighted_sum / weight_sum) / self.peak_capital
         } else {
             0.0
         }

@@ -21,6 +21,9 @@ mod reinforcement_learning;
 mod secure_config;
 mod enhanced_marketplace;
 
+#[cfg(test)]
+mod algorithm_tests;
+
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
