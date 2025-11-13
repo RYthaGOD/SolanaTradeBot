@@ -3,6 +3,14 @@ name = "agentburn-backend"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "agentburn-backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "setup_api_key"
+path = "src/bin/setup_api_key.rs"
+
 [dependencies]
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -21,3 +29,7 @@ async-trait = "0.1"
 log = "0.4"
 pretty_env_logger = "0.5"
 bs58 = "0.5"
+solana-sdk = "1.18"
+solana-client = "1.18"
+switchboard-solana = "0.29"
+anchor-lang = "0.29"
