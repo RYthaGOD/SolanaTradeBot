@@ -86,13 +86,26 @@ pub async fn start_server(
                     
                     let portfolio_data = engine_lock.get_portfolio_data();
                     let metrics = risk_lock.get_performance_metrics();
+                    let roi = engine_lock.get_roi();
+                    
+                    // Build current prices map from market state
+                    let mut current_prices = HashMap::new();
+                    for (symbol, data) in &engine_lock.market_state {
+                        if let Some(latest) = data.back() {
+                            current_prices.insert(symbol.clone(), latest.price);
+                        }
+                    }
+                    
+                    // Calculate total portfolio value including positions
+                    let total_value = engine_lock.get_total_value(&current_prices);
                     
                     let mut response = HashMap::new();
                     response.insert("positions".to_string(), serde_json::to_value(portfolio_data).unwrap());
-                    response.insert("total_value".to_string(), serde_json::to_value(metrics.get("current_capital").unwrap_or(&0.0)).unwrap());
+                    response.insert("total_value".to_string(), serde_json::to_value(total_value).unwrap());
                     response.insert("cash".to_string(), serde_json::to_value(engine_lock.current_balance).unwrap());
                     response.insert("daily_pnl".to_string(), serde_json::to_value(metrics.get("daily_pnl").unwrap_or(&0.0)).unwrap());
                     response.insert("total_pnl".to_string(), serde_json::to_value(metrics.get("total_pnl").unwrap_or(&0.0)).unwrap());
+                    response.insert("roi".to_string(), serde_json::to_value(roi).unwrap());
                     
                     Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(response, "Portfolio data retrieved")))
                 }
@@ -101,15 +114,22 @@ pub async fn start_server(
     
     let performance_route = {
         let risk_manager = risk_manager.clone();
+        let engine = engine.clone();
         
         warp::path("performance")
             .and(warp::get())
             .and_then(move || {
                 let risk_manager = risk_manager.clone();
+                let engine = engine.clone();
                 
                 async move {
                     let risk_lock = risk_manager.lock().await;
-                    let metrics = risk_lock.get_performance_metrics();
+                    let engine_lock = engine.lock().await;
+                    let mut metrics = risk_lock.get_performance_metrics();
+                    
+                    // Add ROI using initial_balance
+                    let roi = engine_lock.get_roi();
+                    metrics.insert("roi_percent".to_string(), roi);
                     
                     Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(metrics, "Performance metrics retrieved")))
                 }
