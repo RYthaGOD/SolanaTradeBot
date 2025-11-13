@@ -16,6 +16,11 @@ A sophisticated AI-powered trading system for Solana, built with Rust and React.
 - **PumpFun Meme Tracking**: Monitor and analyze meme coin launches with sentiment analysis
 - **Autonomous Agent**: Multi-source decision-making agent that trades 24/7
 - **X402 Signal Platform**: Trade signals as assets using the X402 protocol
+- **Wallet Integration**: Solana wallet management with keypair generation and secure storage
+- **Treasury PDA**: Program Derived Address for agent trading treasury
+- **RPC Integration**: Direct connection to Solana blockchain via RPC endpoints
+- **Budget Management**: User-configurable trading budget with deposit/withdraw functionality
+- **Advanced Quant Analysis**: 15+ technical indicators with signal quality scoring
 
 ## 🛠️ Tech Stack
 
@@ -70,6 +75,20 @@ Access the application:
 - `GET /signals/marketplace/provider/{id}` - Provider statistics
 - `POST /signals/marketplace/purchase` - Purchase a signal using X402 protocol
 
+### Wallet & Treasury
+- `GET /wallet/status` - Get wallet information (address, balance, treasury, budget)
+- `GET /treasury/status` - Get treasury PDA information
+
+### Budget Management
+- `GET /budget/status` - Check current trading budget and balance
+- `POST /budget/set` - Set trading budget (requires JSON: `{"budget": 10000.0}`)
+- `POST /budget/deposit` - Deposit funds to budget (requires JSON: `{"amount": 5000.0}`)
+- `POST /budget/withdraw` - Withdraw funds from budget (requires JSON: `{"amount": 2000.0}`)
+
+### Quantitative Analysis
+- `GET /quant/analyze/{symbol}` - Get detailed technical analysis for a symbol
+- `GET /quant/overview` - Get quick analysis overview for all symbols
+
 ### DEX Integration
 - `GET /jupiter/quote/{input_mint}/{output_mint}/{amount}` - Get Jupiter swap quote
 - `GET /ai/status` - DeepSeek AI configuration status
@@ -111,12 +130,135 @@ agentburn-solana-trader/
 - Maximum drawdown limit of 10%
 - Confidence threshold of 50% for trade execution
 
+### Wallet & Blockchain Integration
+
+**Wallet Management:**
+- Automatic keypair generation or load from environment variable (`WALLET_PRIVATE_KEY`)
+- Support for Solana CLI JSON format wallet files
+- Secure storage with proper file permissions (0600 on Unix)
+- Base58 private key encoding/decoding
+
+**Treasury PDA (Program Derived Address):**
+- Deterministic address derivation for agent trading treasury
+- Separate treasury account for isolating agent funds
+- Authority-based access control
+- Seed-based PDA derivation for multiple agent treasuries
+
+**RPC Integration:**
+- Direct connection to Solana blockchain (devnet/mainnet-beta)
+- Real-time balance queries
+- Transaction submission and confirmation
+- Account state queries
+- Block and slot information
+
+**API Endpoints:**
+```bash
+# Check wallet status
+curl http://localhost:8080/wallet/status
+
+# Check treasury PDA
+curl http://localhost:8080/treasury/status
+```
+
+**Configuration:**
+```bash
+# Set RPC endpoint (defaults to devnet)
+SOLANA_RPC_URL=https://api.devnet.solana.com
+
+# Optional: Provide existing wallet (otherwise generates new)
+WALLET_PRIVATE_KEY=your_base58_private_key_here
+
+# Set trading budget (defaults to 10000.0)
+TRADING_BUDGET=8000.0
+```
+
+### Budget Management
+
+The system now supports configurable trading budgets:
+
+**Set Budget:**
+```bash
+# Via environment variable
+TRADING_BUDGET=10000.0
+
+# Or via API
+curl -X POST http://localhost:8080/budget/set \
+  -H "Content-Type: application/json" \
+  -d '{"budget": 15000.0}'
+```
+
+**Manage Funds:**
+```bash
+# Deposit funds
+curl -X POST http://localhost:8080/budget/deposit \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 5000.0}'
+
+# Withdraw funds
+curl -X POST http://localhost:8080/budget/withdraw \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 2000.0}'
+
+# Check budget status
+curl http://localhost:8080/budget/status
+```
+
+### Advanced Quantitative Analysis
+
+The system includes comprehensive technical analysis with 15+ indicators:
+
+**Technical Indicators:**
+- **Trend**: SMA-10, SMA-20, SMA-50, EMA-12, EMA-26
+- **Momentum**: RSI-14, MACD (with signal and histogram)
+- **Volatility**: Bollinger Bands, ATR-14, Standard Deviation
+- **Volume**: On-Balance Volume (OBV)
+- **Price Action**: Momentum percentage
+
+**Signal Quality Scoring:**
+- Score: 0-100 (higher = stronger signal)
+- Trend: Bullish/Neutral/Bearish
+- Strength: Strong/Moderate/Weak
+- Risk Level: Low/Medium/High
+- Recommendation: Strong Buy/Buy/Hold/Sell/Strong Sell
+
+**Usage:**
+```bash
+# Get detailed analysis for a symbol
+curl http://localhost:8080/quant/analyze/SOL/USDC | jq
+
+# Get quick overview for all symbols
+curl http://localhost:8080/quant/overview | jq
+```
+
+**Example Response:**
+```json
+{
+  "signal_quality": {
+    "score": 72.5,
+    "trend": "Bullish",
+    "strength": "Strong",
+    "confidence": 0.78,
+    "risk_level": "Medium",
+    "recommendation": "Buy"
+  },
+  "indicators": {
+    "sma_10": 105.2,
+    "sma_20": 102.8,
+    "rsi_14": 58.3,
+    "macd": 2.15,
+    "bollinger_upper": 108.5,
+    "bollinger_lower": 98.2
+  }
+}
+```
+
 ## 🚨 Important Notes
 
-- This is a **simulated trading environment** - no real funds are at risk
-- Market data is generated algorithmically for demonstration purposes
-- Trading signals are based on simple moving average strategies
-- Real Solana integration requires additional configuration (wallet, RPC endpoint)
+- Trading can be done in **simulation mode** (default) or with **real Solana integration**
+- In simulation mode, no real funds are at risk
+- For real trading, configure wallet and RPC endpoint in `.env`
+- Always test on devnet before using mainnet
+- Market data can be simulated or fetched from live sources (Switchboard, DEX Screener)
 
 ## 🎯 X402 Signal Trading Protocol
 

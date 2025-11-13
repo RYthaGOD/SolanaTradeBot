@@ -1,6 +1,6 @@
 use warp::Filter;
 use std::collections::HashMap;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use crate::jupiter_integration::JupiterClient;
@@ -30,6 +30,7 @@ impl<T> ApiResponse<T> {
 pub async fn start_server(
     engine: Arc<Mutex<super::trading_engine::TradingEngine>>,
     risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
+    solana_client: Arc<Mutex<super::solana_integration::SolanaClient>>,
 ) {
     log::info!("🌐 Starting Warp server on :8080");
     
@@ -52,6 +53,9 @@ pub async fn start_server(
     
     // Create Signal Marketplace
     let signal_marketplace = Arc::new(SignalMarketplace::new(rpc_url));
+    
+    // Create Quant Analyzer
+    let quant_analyzer = Arc::new(crate::quant_analysis::QuantAnalyzer::new());
     
     let cors = crate::security::cors_config();
     
@@ -592,6 +596,309 @@ pub async fn start_server(
             })
     };
     
+    // Wallet status route
+    let wallet_status_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("wallet" / "status")
+            .and(warp::get())
+            .and_then(move || {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let client_lock = solana_client.lock().await;
+                    
+                    let mut status = HashMap::new();
+                    status.insert("connected", serde_json::to_value(client_lock.connected).unwrap());
+                    status.insert("balance", serde_json::to_value(client_lock.wallet_balance).unwrap());
+                    status.insert("transaction_count", serde_json::to_value(client_lock.transaction_count).unwrap());
+                    status.insert("trading_budget", serde_json::to_value(client_lock.trading_budget).unwrap());
+                    
+                    if let Some(addr) = client_lock.get_wallet_address() {
+                        status.insert("wallet_address", serde_json::to_value(addr).unwrap());
+                    }
+                    
+                    if let Some(treasury) = client_lock.get_treasury_address() {
+                        status.insert("treasury_address", serde_json::to_value(treasury).unwrap());
+                    }
+                    
+                    if let Some(rpc) = &client_lock.rpc_url {
+                        status.insert("rpc_url", serde_json::to_value(rpc).unwrap());
+                    }
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        status,
+                        "Wallet status retrieved"
+                    )))
+                }
+            })
+    };
+    
+    // Treasury status route
+    let treasury_status_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("treasury" / "status")
+            .and(warp::get())
+            .and_then(move || {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let client_lock = solana_client.lock().await;
+                    
+                    let mut status = HashMap::new();
+                    
+                    if let Some(treasury) = client_lock.get_treasury_address() {
+                        status.insert("address", serde_json::to_value(treasury).unwrap());
+                        status.insert("type", serde_json::to_value("PDA").unwrap());
+                        status.insert("purpose", serde_json::to_value("Agent Trading Treasury").unwrap());
+                    } else {
+                        status.insert("status", serde_json::to_value("Not initialized").unwrap());
+                    }
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        status,
+                        "Treasury status retrieved"
+                    )))
+                }
+            })
+    };
+
+    // Budget status route
+    let budget_status_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("budget" / "status")
+            .and(warp::get())
+            .and_then(move || {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let client_lock = solana_client.lock().await;
+                    
+                    let mut status = HashMap::new();
+                    status.insert("trading_budget", serde_json::to_value(client_lock.get_trading_budget()).unwrap());
+                    status.insert("wallet_balance", serde_json::to_value(client_lock.wallet_balance).unwrap());
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        status,
+                        "Budget status retrieved"
+                    )))
+                }
+            })
+    };
+
+    // Set budget route
+    #[derive(Deserialize)]
+    struct SetBudgetRequest {
+        budget: f64,
+    }
+
+    let set_budget_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("budget" / "set")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |req: SetBudgetRequest| {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let mut client_lock = solana_client.lock().await;
+                    
+                    match client_lock.set_trading_budget(req.budget) {
+                        Ok(_) => {
+                            let mut response = HashMap::new();
+                            response.insert("trading_budget", serde_json::to_value(client_lock.get_trading_budget()).unwrap());
+                            
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                response,
+                                "Trading budget updated successfully"
+                            )))
+                        }
+                        Err(e) => {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                HashMap::<String, String>::new(),
+                                &format!("Failed to set budget: {}", e)
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+
+    // Deposit funds route
+    #[derive(Deserialize)]
+    struct DepositRequest {
+        amount: f64,
+    }
+
+    let deposit_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("budget" / "deposit")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |req: DepositRequest| {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let mut client_lock = solana_client.lock().await;
+                    
+                    match client_lock.deposit_funds(req.amount) {
+                        Ok(new_budget) => {
+                            let mut response = HashMap::new();
+                            response.insert("trading_budget", serde_json::to_value(new_budget).unwrap());
+                            response.insert("deposited", serde_json::to_value(req.amount).unwrap());
+                            
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                response,
+                                "Funds deposited successfully"
+                            )))
+                        }
+                        Err(e) => {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                HashMap::<String, String>::new(),
+                                &format!("Failed to deposit funds: {}", e)
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+
+    // Withdraw funds route
+    #[derive(Deserialize)]
+    struct WithdrawRequest {
+        amount: f64,
+    }
+
+    let withdraw_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("budget" / "withdraw")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |req: WithdrawRequest| {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let mut client_lock = solana_client.lock().await;
+                    
+                    match client_lock.withdraw_funds(req.amount) {
+                        Ok(new_budget) => {
+                            let mut response = HashMap::new();
+                            response.insert("trading_budget", serde_json::to_value(new_budget).unwrap());
+                            response.insert("withdrawn", serde_json::to_value(req.amount).unwrap());
+                            
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                response,
+                                "Funds withdrawn successfully"
+                            )))
+                        }
+                        Err(e) => {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                HashMap::<String, String>::new(),
+                                &format!("Failed to withdraw funds: {}", e)
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+
+    // Quant analysis endpoint
+    let quant_analysis_route = {
+        let engine = engine.clone();
+        let quant_analyzer = quant_analyzer.clone();
+        
+        warp::path!("quant" / "analyze" / String)
+            .and(warp::get())
+            .and_then(move |symbol: String| {
+                let engine = engine.clone();
+                let quant_analyzer = quant_analyzer.clone();
+                
+                async move {
+                    let engine_lock = engine.lock().await;
+                    
+                    if let Some(market_data) = engine_lock.market_state.get(&symbol) {
+                        let prices: Vec<f64> = market_data.iter().map(|d| d.price).collect();
+                        let volumes: Vec<f64> = market_data.iter().map(|d| d.volume).collect();
+                        
+                        if let Some(indicators) = quant_analyzer.calculate_indicators(&prices, &volumes) {
+                            let current_price = prices.last().copied().unwrap_or(0.0);
+                            let signal_quality = quant_analyzer.analyze_signal_quality(&indicators, current_price);
+                            
+                            let mut response = HashMap::new();
+                            response.insert("symbol", serde_json::to_value(&symbol).unwrap());
+                            response.insert("current_price", serde_json::to_value(current_price).unwrap());
+                            response.insert("indicators", serde_json::to_value(&indicators).unwrap());
+                            response.insert("signal_quality", serde_json::to_value(&signal_quality).unwrap());
+                            
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                response,
+                                "Quantitative analysis completed"
+                            )))
+                        } else {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                HashMap::<String, String>::new(),
+                                "Insufficient data for analysis"
+                            )))
+                        }
+                    } else {
+                        Ok(warp::reply::json(&ApiResponse::new(
+                            HashMap::<String, String>::new(),
+                            &format!("Symbol {} not found", symbol)
+                        )))
+                    }
+                }
+            })
+    };
+
+    // Quant indicators overview endpoint
+    let quant_overview_route = {
+        let engine = engine.clone();
+        let quant_analyzer = quant_analyzer.clone();
+        
+        warp::path!("quant" / "overview")
+            .and(warp::get())
+            .and_then(move || {
+                let engine = engine.clone();
+                let quant_analyzer = quant_analyzer.clone();
+                
+                async move {
+                    let engine_lock = engine.lock().await;
+                    let mut results = Vec::new();
+                    
+                    for (symbol, market_data) in engine_lock.market_state.iter() {
+                        let prices: Vec<f64> = market_data.iter().map(|d| d.price).collect();
+                        let volumes: Vec<f64> = market_data.iter().map(|d| d.volume).collect();
+                        
+                        if let Some(indicators) = quant_analyzer.calculate_indicators(&prices, &volumes) {
+                            let current_price = prices.last().copied().unwrap_or(0.0);
+                            let signal_quality = quant_analyzer.analyze_signal_quality(&indicators, current_price);
+                            
+                            let mut symbol_data = HashMap::new();
+                            symbol_data.insert("symbol", serde_json::to_value(symbol).unwrap());
+                            symbol_data.insert("current_price", serde_json::to_value(current_price).unwrap());
+                            symbol_data.insert("recommendation", serde_json::to_value(&signal_quality.recommendation).unwrap());
+                            symbol_data.insert("score", serde_json::to_value(signal_quality.score).unwrap());
+                            symbol_data.insert("trend", serde_json::to_value(&signal_quality.trend).unwrap());
+                            symbol_data.insert("confidence", serde_json::to_value(signal_quality.confidence).unwrap());
+                            symbol_data.insert("rsi", serde_json::to_value(indicators.rsi_14).unwrap());
+                            
+                            results.push(symbol_data);
+                        }
+                    }
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        results,
+                        "Quantitative analysis overview"
+                    )))
+                }
+            })
+    };
+    
     let routes = health
         .or(portfolio_route)
         .or(performance_route)
@@ -613,6 +920,14 @@ pub async fn start_server(
         .or(signal_provider_register_route)
         .or(signal_provider_stats_route)
         .or(signal_purchase_route)
+        .or(wallet_status_route)
+        .or(treasury_status_route)
+        .or(budget_status_route)
+        .or(set_budget_route)
+        .or(deposit_route)
+        .or(withdraw_route)
+        .or(quant_analysis_route)
+        .or(quant_overview_route)
         .with(cors)
         .with(warp::log("api"));
     
