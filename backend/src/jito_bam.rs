@@ -14,7 +14,6 @@ use std::error::Error;
 use reqwest::Client;
 use solana_sdk::{
     transaction::Transaction,
-    signature::Signature,
     pubkey::Pubkey,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
