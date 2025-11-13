@@ -122,7 +122,7 @@ impl SpecializedProvider {
             .map_err(|e| format!("PumpFun error: {}", e))?;
 
         // Get oracle data for price validation
-        let oracle_feeds = self.oracle_client.fetch_multiple_feeds(&vec![
+        let oracle_feeds = self.oracle_client.fetch_multiple_feeds(&[
             "SOL/USD".to_string(),
         ]).await.map_err(|e| format!("Oracle error: {}", e))?;
 
@@ -235,7 +235,7 @@ impl SpecializedProvider {
         let mut signals = Vec::new();
 
         // Get oracle data for perps analysis
-        let feeds = self.oracle_client.fetch_multiple_feeds(&vec![
+        let feeds = self.oracle_client.fetch_multiple_feeds(&[
             "SOL/USD".to_string(),
             "BTC/USD".to_string(),
             "ETH/USD".to_string(),
@@ -555,12 +555,43 @@ impl SpecializedProvider {
                     SignalAction::Sell
                 };
 
-                // Calculate master confidence score
+                // Enhanced master confidence score with reputation weighting
+                // Get provider reputation scores from marketplace
+                let mut reputation_weighted_confidence = 0.0;
+                let mut total_reputation = 0.0;
+                
+                for provider_id in &analysis.providers {
+                    if let Some(stats) = self.marketplace.get_provider_stats(provider_id).await {
+                        let reputation = stats.reputation_score;
+                        // Weight this provider's contribution by their reputation
+                        reputation_weighted_confidence += avg_confidence * reputation;
+                        total_reputation += reputation;
+                    }
+                }
+                
+                let base_confidence = if total_reputation > 0.0 {
+                    reputation_weighted_confidence / total_reputation
+                } else {
+                    avg_confidence
+                };
+                
+                // Bonuses for consensus quality
                 let provider_diversity_bonus = (analysis.provider_count as f64 / 5.0).min(0.15);
                 let data_source_bonus = (analysis.data_sources.len() as f64 / 10.0).min(0.10);
                 let directional_bonus = (directional_strength - 0.75) * 0.5;
                 
-                let master_confidence = (avg_confidence + provider_diversity_bonus + data_source_bonus + directional_bonus).min(0.98);
+                // Penalty if providers conflict (reduces confidence)
+                let conflict_penalty = if directional_strength < 0.9 {
+                    (0.9 - directional_strength) * 0.3
+                } else {
+                    0.0
+                };
+                
+                let master_confidence = (base_confidence 
+                    + provider_diversity_bonus 
+                    + data_source_bonus 
+                    + directional_bonus
+                    - conflict_penalty).min(0.98).max(0.5);
 
                 // Fetch current oracle data for validation
                 let oracle_validation = self.validate_with_oracle_data(&symbol).await;
@@ -779,7 +810,7 @@ mod tests {
 
     #[test]
     fn test_provider_types() {
-        let types = vec![
+        let types = [
             ProviderType::MemecoinMonitor,
             ProviderType::OracleMonitor,
             ProviderType::PerpsMonitor,

@@ -20,10 +20,14 @@ mod specialized_providers;
 mod reinforcement_learning;
 mod secure_config;
 mod enhanced_marketplace;
+mod historical_data;
 mod wallet;
 mod pda;
 mod rpc_client;
 mod quant_analysis;
+
+#[cfg(test)]
+mod algorithm_tests;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;

@@ -6,6 +6,7 @@ use chrono::Utc;
 
 use crate::deepseek_ai::{DeepSeekClient, TradingDecision};
 use crate::signal_platform::TradingSignalData;
+use crate::historical_data::{HistoricalDataManager, HistoricalFeatures, PriceDataPoint};
 
 /// Experience replay buffer for reinforcement learning
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,17 +116,18 @@ impl AgentPerformance {
     }
 }
 
-/// Reinforcement Learning Agent with DeepSeek LLM
+/// Reinforcement Learning Agent with DeepSeek LLM and Historical Data
 pub struct RLAgent {
     pub agent_id: String,
     pub provider_type: String,
     deepseek_client: Option<Arc<DeepSeekClient>>,
     experience_buffer: Arc<Mutex<VecDeque<Experience>>>,
-    performance: Arc<Mutex<AgentPerformance>>,
+    pub(crate) performance: Arc<Mutex<AgentPerformance>>,
     q_table: Arc<Mutex<HashMap<String, f64>>>, // Simple Q-learning table
-    epsilon: f64, // Exploration rate
+    pub(crate) epsilon: f64, // Exploration rate
     gamma: f64,   // Discount factor
     max_buffer_size: usize,
+    historical_data: Arc<Mutex<HistoricalDataManager>>, // Historical price data
 }
 
 impl RLAgent {
@@ -142,15 +144,30 @@ impl RLAgent {
             epsilon: 0.2, // 20% exploration
             gamma: 0.95,  // Future reward discount
             max_buffer_size: 1000,
+            historical_data: Arc::new(Mutex::new(HistoricalDataManager::new(1000))), // Keep 1000 data points per symbol
         }
     }
+    
+    /// Add historical price data for training
+    pub async fn add_historical_data(&self, symbol: String, data_point: PriceDataPoint) {
+        let mut historical = self.historical_data.lock().await;
+        historical.add_price_data(symbol, data_point);
+    }
+    
+    /// Get historical features for a symbol
+    pub async fn get_historical_features(&self, symbol: &str) -> Option<HistoricalFeatures> {
+        let historical = self.historical_data.lock().await;
+        historical.get_features(symbol)
+    }
 
-    /// Make a decision using DeepSeek LLM with reinforcement learning
+    /// Make a decision using DeepSeek LLM with reinforcement learning and historical data
     pub async fn make_decision(
         &self,
         state: &MarketState,
         historical_experiences: &[Experience],
     ) -> Result<Action, String> {
+        // Get historical features for enhanced decision making
+        let historical_features = self.get_historical_features(&state.symbol).await;
         // Get performance metrics for context
         let performance = self.performance.lock().await;
         let current_win_rate = performance.win_rate;
@@ -169,8 +186,8 @@ impl RLAgent {
 
         // Exploitation: Use learned knowledge
         if let Some(ref deepseek) = self.deepseek_client {
-            // Use DeepSeek LLM for enhanced decision making
-            match self.ask_deepseek_with_learning(deepseek, state, current_win_rate, avg_reward, learning_rate, historical_experiences).await {
+            // Use DeepSeek LLM for enhanced decision making with historical data
+            match self.ask_deepseek_with_learning(deepseek, state, current_win_rate, avg_reward, learning_rate, historical_experiences, historical_features.as_ref()).await {
                 Ok(decision) => {
                     return Ok(Action {
                         action_type: decision.action,
@@ -190,7 +207,7 @@ impl RLAgent {
         self.make_q_learning_decision(state).await
     }
 
-    /// Ask DeepSeek LLM with learning context
+    /// Ask DeepSeek LLM with learning context and historical data
     async fn ask_deepseek_with_learning(
         &self,
         deepseek: &DeepSeekClient,
@@ -199,6 +216,7 @@ impl RLAgent {
         avg_reward: f64,
         learning_rate: f64,
         historical_experiences: &[Experience],
+        historical_features: Option<&HistoricalFeatures>,
     ) -> Result<TradingDecision, Box<dyn std::error::Error>> {
         // Analyze recent experiences for patterns
         let recent_successes: Vec<&Experience> = historical_experiences.iter()
@@ -213,8 +231,41 @@ impl RLAgent {
             .take(5)
             .collect();
 
+        // Build enhanced learning context with historical data
+        let historical_context = if let Some(features) = historical_features {
+            format!(
+                "\nHISTORICAL DATA ANALYSIS:\n\
+                 - Data Points: {}\n\
+                 - 5m Change: {:.2}%\n\
+                 - 1h Change: {:.2}%\n\
+                 - 4h Change: {:.2}%\n\
+                 - 24h Change: {:.2}%\n\
+                 - Volatility (20-period): {:.2}%\n\
+                 - RSI (14-period): {}\n\
+                 - Volume Ratio: {:.2}x average\n\
+                 - Trend Strength: {:.2}%\n\
+                 - EMA 10: ${:.2}\n\
+                 - EMA 20: ${:.2}\n\
+                 - SMA 50: ${:.2}",
+                features.data_points,
+                features.price_changes.change_5m,
+                features.price_changes.change_1h,
+                features.price_changes.change_4h,
+                features.price_changes.change_24h,
+                features.volatility,
+                features.rsi.map(|r| format!("{:.1}", r)).unwrap_or_else(|| "N/A".to_string()),
+                features.volume_ratio,
+                features.trend_strength,
+                features.moving_averages.ema_10.unwrap_or(0.0),
+                features.moving_averages.ema_20.unwrap_or(0.0),
+                features.moving_averages.sma_50.unwrap_or(0.0)
+            )
+        } else {
+            "\nHISTORICAL DATA ANALYSIS: Not available".to_string()
+        };
+        
         // Build learning context for DeepSeek
-        let learning_context = format!(
+        let _learning_context = format!(
             "AGENT PERFORMANCE CONTEXT:\n\
              - Provider Type: {}\n\
              - Current Win Rate: {:.1}%\n\
@@ -230,9 +281,10 @@ impl RLAgent {
              - 1h Change: {:.2}%\n\
              - 24h Change: {:.2}%\n\
              - Sentiment: {:.1}/100\n\
-             - Volatility: {:.2}%\n\n\
-             Based on your learning history, what action should you take? \
-             Prioritize strategies that have worked well and avoid patterns that failed.",
+             - Volatility: {:.2}%{}\n\n\
+             Based on your learning history AND historical data patterns, what action should you take? \
+             Prioritize strategies that have worked well and avoid patterns that failed. \
+             Use the historical technical indicators to make more informed predictions.",
             self.provider_type,
             win_rate * 100.0,
             avg_reward,
@@ -246,7 +298,8 @@ impl RLAgent {
             state.price_change_1h,
             state.price_change_24h,
             state.sentiment_score,
-            state.volatility
+            state.volatility,
+            historical_context
         );
 
         // Call DeepSeek with minimal history for context
@@ -287,7 +340,7 @@ impl RLAgent {
 
     /// Generate exploratory action (exploration strategy)
     fn generate_exploratory_action(&self, state: &MarketState) -> Action {
-        let actions = vec!["BUY", "SELL", "HOLD"];
+        let actions = ["BUY", "SELL", "HOLD"];
         let action_type = actions[rand::random::<usize>() % actions.len()].to_string();
         
         Action {
@@ -324,15 +377,16 @@ impl RLAgent {
         })
     }
 
-    /// Encode state for Q-table
-    fn encode_state(&self, state: &MarketState) -> String {
-        // Discretize continuous values
-        let price_bucket = (state.price / 10.0).floor() as i32;
-        let change_bucket = (state.price_change_1h / 2.0).floor() as i32;
-        let sentiment_bucket = (state.sentiment_score / 20.0).floor() as i32;
+    /// Encode state for Q-table (improved with finer granularity)
+    pub(crate) fn encode_state(&self, state: &MarketState) -> String {
+        // Discretize continuous values with finer buckets for better accuracy
+        let price_bucket = (state.price / 5.0).floor() as i32; // Finer: 5 instead of 10
+        let change_bucket = (state.price_change_1h / 1.0).floor() as i32; // Finer: 1% instead of 2%
+        let sentiment_bucket = (state.sentiment_score / 10.0).floor() as i32; // Finer: 10 instead of 20
+        let volume_bucket = (state.volume.log10() / 0.5).floor() as i32; // Add volume dimension
 
-        format!("{}:{}:{}:{}", 
-            state.symbol, price_bucket, change_bucket, sentiment_bucket)
+        format!("{}:{}:{}:{}:{}", 
+            state.symbol, price_bucket, change_bucket, sentiment_bucket, volume_bucket)
     }
 
     /// Record experience and learn from it
@@ -379,7 +433,7 @@ impl RLAgent {
         // Q-learning update rule: Q(s,a) = Q(s,a) + α[r + γ*max(Q(s',a')) - Q(s,a)]
         let next_max_q = if let Some(ref next_state) = experience.next_state {
             let next_state_key = self.encode_state(next_state);
-            let actions = vec!["BUY", "SELL", "HOLD"];
+            let actions = ["BUY", "SELL", "HOLD"];
             actions.iter()
                 .map(|a| {
                     let key = format!("{}:{}", next_state_key, a);
@@ -435,9 +489,26 @@ impl RLAgent {
             .collect()
     }
 
-    /// Decay exploration rate over time (anneal epsilon)
-    pub fn decay_exploration(&mut self) {
-        self.epsilon = (self.epsilon * 0.995).max(0.05); // Minimum 5% exploration
+    /// Adaptive exploration decay based on performance
+    pub async fn decay_exploration(&mut self) {
+        let performance = self.performance.lock().await;
+        let win_rate = performance.win_rate;
+        drop(performance);
+        
+        // Adaptive epsilon decay
+        if win_rate > 0.6 {
+            // Doing well, reduce exploration more aggressively
+            self.epsilon = (self.epsilon * 0.99).max(0.03); // Min 3% exploration
+        } else if win_rate < 0.4 {
+            // Struggling, maintain higher exploration
+            self.epsilon = (self.epsilon * 0.995).max(0.10); // Min 10% exploration
+        } else {
+            // Normal decay
+            self.epsilon = (self.epsilon * 0.997).max(0.05); // Min 5% exploration
+        }
+        
+        log::debug!("Agent {} epsilon decayed to {:.3}, win_rate: {:.2}%", 
+                    self.agent_id, self.epsilon, win_rate * 100.0);
     }
 }
 

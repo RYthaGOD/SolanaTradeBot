@@ -99,7 +99,7 @@ impl PumpFunClient {
         let mut launches = Vec::new();
         let base_timestamp = Utc::now().timestamp();
         
-        let meme_names = vec![
+        let meme_names = [
             ("DOGE2", "Doge 2.0"),
             ("PEPE", "Pepe Coin"),
             ("SHIB2", "Shiba 2.0"),

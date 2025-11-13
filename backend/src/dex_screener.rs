@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::time::{Duration, SystemTime};
+use std::collections::HashMap;
 
-/// DEX Screener token pair data
+/// DEX Screener token pair data (matches official API response)
+/// API Docs: https://docs.dexscreener.com/api/reference
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenPair {
     pub chain_id: String,
     pub dex_id: String,
@@ -12,10 +16,14 @@ pub struct TokenPair {
     pub quote_token: Token,
     pub price_native: String,
     pub price_usd: Option<String>,
+    #[serde(default)]
+    pub txns: Transactions,
     pub volume: Volume,
     pub liquidity: Liquidity,
     pub fdv: Option<f64>,
     pub price_change: PriceChange,
+    #[serde(default)]
+    pub pair_created_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,16 +52,37 @@ pub struct Liquidity {
     pub quote: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PriceChange {
-    #[serde(rename = "h24")]
-    pub h24: f64,
-    #[serde(rename = "h6")]
-    pub h6: f64,
-    #[serde(rename = "h1")]
-    pub h1: f64,
-    #[serde(rename = "m5")]
+    #[serde(rename = "m5", default)]
     pub m5: f64,
+    #[serde(rename = "h1", default)]
+    pub h1: f64,
+    #[serde(rename = "h6", default)]
+    pub h6: f64,
+    #[serde(rename = "h24", default)]
+    pub h24: f64,
+}
+
+/// Transaction data for a pair
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Transactions {
+    #[serde(rename = "m5", default)]
+    pub m5: TransactionCount,
+    #[serde(rename = "h1", default)]
+    pub h1: TransactionCount,
+    #[serde(rename = "h6", default)]
+    pub h6: TransactionCount,
+    #[serde(rename = "h24", default)]
+    pub h24: TransactionCount,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TransactionCount {
+    #[serde(default)]
+    pub buys: i32,
+    #[serde(default)]
+    pub sells: i32,
 }
 
 /// Response from DEX Screener API
@@ -81,72 +110,144 @@ pub struct TradingOpportunity {
 }
 
 /// DEX Screener client for token discovery and analysis
+/// Official API: https://api.dexscreener.com/latest
+/// Rate Limit: 300 requests per minute
 pub struct DexScreenerClient {
     api_url: String,
     client: reqwest::Client,
+    last_request_time: std::sync::Arc<std::sync::Mutex<SystemTime>>,
+    request_count: std::sync::Arc<std::sync::Mutex<u32>>,
 }
 
 impl DexScreenerClient {
     pub fn new() -> Self {
         Self {
             api_url: "https://api.dexscreener.com/latest".to_string(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .user_agent("SolanaTradeBot/1.0")
+                .build()
+                .unwrap(),
+            last_request_time: std::sync::Arc::new(std::sync::Mutex::new(SystemTime::now())),
+            request_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
         }
+    }
+    
+    /// Check and enforce rate limit (300 requests per minute)
+    async fn check_rate_limit(&self) -> Result<(), Box<dyn Error>> {
+        let mut last_time = self.last_request_time.lock().unwrap();
+        let mut count = self.request_count.lock().unwrap();
+        
+        let now = SystemTime::now();
+        let elapsed = now.duration_since(*last_time).unwrap_or(Duration::from_secs(60));
+        
+        // Reset counter after 1 minute
+        if elapsed >= Duration::from_secs(60) {
+            *count = 0;
+            *last_time = now;
+        }
+        
+        // Check rate limit
+        if *count >= 300 {
+            let wait_time = Duration::from_secs(60) - elapsed;
+            log::warn!("Rate limit reached, waiting {:?}", wait_time);
+            tokio::time::sleep(wait_time).await;
+            *count = 0;
+            *last_time = SystemTime::now();
+        }
+        
+        *count += 1;
+        Ok(())
     }
     
     /// Search for tokens by query
+    /// Endpoint: GET /dex/search/?q={query}
     pub async fn search_tokens(&self, query: &str) -> Result<Vec<TokenPair>, Box<dyn Error>> {
+        self.check_rate_limit().await?;
+        
         let url = format!("{}/dex/search/?q={}", self.api_url, query);
         
-        log::debug!("Searching DEX Screener for: {}", query);
+        log::info!("Searching DEX Screener for: {}", query);
         
         let response = self.client
             .get(&url)
-            .header("User-Agent", "Mozilla/5.0")
             .send()
-            .await?;
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
-        if !response.status().is_success() {
-            return Err(format!("DEX Screener API error: {}", response.status()).into());
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("DEX Screener API error {}: {}", status, error_text).into());
         }
         
-        let data: DexScreenerResponse = response.json().await?;
+        let data: DexScreenerResponse = response.json().await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
         
-        Ok(data.pairs.unwrap_or_default())
+        let pairs = data.pairs.unwrap_or_default();
+        log::info!("Found {} pairs for query: {}", pairs.len(), query);
+        
+        Ok(pairs)
     }
     
-    /// Get token pairs by token address
+    /// Get token pairs by token address (supports multiple addresses)
+    /// Endpoint: GET /dex/tokens/{tokenAddresses}
+    /// Example: /dex/tokens/0x2170...abc,0x3171...def
     pub async fn get_token_pairs(&self, token_address: &str) -> Result<Vec<TokenPair>, Box<dyn Error>> {
+        self.check_rate_limit().await?;
+        
         let url = format!("{}/dex/tokens/{}", self.api_url, token_address);
         
-        log::debug!("Fetching token pairs for: {}", token_address);
+        log::info!("Fetching token pairs for: {}", token_address);
         
         let response = self.client
             .get(&url)
-            .header("User-Agent", "Mozilla/5.0")
             .send()
-            .await?;
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
-        if !response.status().is_success() {
-            return Err(format!("DEX Screener API error: {}", response.status()).into());
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("DEX Screener API error {}: {}", status, error_text).into());
         }
         
-        let data: DexScreenerResponse = response.json().await?;
+        let data: DexScreenerResponse = response.json().await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
         
-        Ok(data.pairs.unwrap_or_default())
+        let pairs = data.pairs.unwrap_or_default();
+        log::info!("Found {} pairs for token: {}", pairs.len(), token_address);
+        
+        Ok(pairs)
+    }
+    
+    /// Get token pairs for multiple addresses at once
+    /// More efficient than calling get_token_pairs multiple times
+    pub async fn get_multiple_token_pairs(&self, token_addresses: &[String]) -> Result<Vec<TokenPair>, Box<dyn Error>> {
+        if token_addresses.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        // DexScreener supports comma-separated addresses
+        let addresses = token_addresses.join(",");
+        self.get_token_pairs(&addresses).await
     }
     
     /// Get pair data by pair address
+    /// Endpoint: GET /dex/pairs/{chainId}/{pairAddresses}
+    /// Supports multiple pair addresses: /dex/pairs/solana/addr1,addr2
     pub async fn get_pair(&self, chain: &str, pair_address: &str) -> Result<Option<TokenPair>, Box<dyn Error>> {
+        self.check_rate_limit().await?;
+        
         let url = format!("{}/dex/pairs/{}/{}", self.api_url, chain, pair_address);
         
-        log::debug!("Fetching pair data for: {}/{}", chain, pair_address);
+        log::info!("Fetching pair data for: {}/{}", chain, pair_address);
         
         let response = self.client
             .get(&url)
-            .header("User-Agent", "Mozilla/5.0")
             .send()
-            .await?;
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
         if !response.status().is_success() {
             return Err(format!("DEX Screener API error: {}", response.status()).into());
@@ -193,45 +294,74 @@ impl DexScreenerClient {
             }
             
             let mut signals = Vec::new();
-            let mut score = 0.0;
             
-            // Check for momentum signals
-            if pair.price_change.m5 > 5.0 {
-                signals.push("Strong 5m momentum".to_string());
-                score += 20.0;
+            // Improved opportunity scoring with weighted factors (0-100 normalized)
+            let momentum_score: f64;
+            let volume_score: f64;
+            let liquidity_score: f64;
+            
+            // Momentum analysis (30% weight) - normalized to 0-100
+            let momentum_5m = (pair.price_change.m5 / 10.0).min(1.0).max(0.0); // 10% = 100 score
+            let momentum_1h = (pair.price_change.h1 / 15.0).min(1.0).max(0.0); // 15% = 100 score
+            let momentum_6h = (pair.price_change.h6 / 25.0).min(1.0).max(0.0); // 25% = 100 score
+            momentum_score = (momentum_5m * 40.0 + momentum_1h * 35.0 + momentum_6h * 25.0);
+            
+            if momentum_5m > 0.5 {
+                signals.push(format!("Strong 5m momentum: +{:.1}%", pair.price_change.m5));
+            }
+            if momentum_1h > 0.67 {
+                signals.push(format!("Strong 1h trend: +{:.1}%", pair.price_change.h1));
+            }
+            if momentum_6h > 0.8 {
+                signals.push(format!("Strong 6h uptrend: +{:.1}%", pair.price_change.h6));
             }
             
-            if pair.price_change.h1 > 10.0 {
-                signals.push("Strong 1h trend".to_string());
-                score += 25.0;
-            }
+            // Volume analysis (25% weight)
+            let vol_ratio_1h = if pair.volume.h6 > 0.0 {
+                (pair.volume.h1 / (pair.volume.h6 / 6.0)).min(3.0) / 3.0
+            } else {
+                0.0
+            };
+            let vol_ratio_5m = if pair.volume.h1 > 0.0 {
+                (pair.volume.m5 / (pair.volume.h1 / 12.0)).min(4.0) / 4.0
+            } else {
+                0.0
+            };
+            volume_score = (vol_ratio_1h * 50.0 + vol_ratio_5m * 50.0);
             
-            if pair.price_change.h6 > 20.0 {
-                signals.push("Strong 6h uptrend".to_string());
-                score += 30.0;
-            }
-            
-            // Volume analysis
-            if pair.volume.h1 > pair.volume.h6 / 6.0 * 1.5 {
+            if vol_ratio_1h > 0.5 {
                 signals.push("Increasing volume".to_string());
-                score += 15.0;
+            }
+            if vol_ratio_5m > 0.5 {
+                signals.push(format!("Volume spike: {:.1}x avg", vol_ratio_5m * 4.0));
             }
             
-            if pair.volume.m5 > pair.volume.h1 / 12.0 * 2.0 {
-                signals.push("Volume spike".to_string());
-                score += 20.0;
-            }
-            
-            // Liquidity check
-            if liquidity_usd > 10000.0 {
-                signals.push("Good liquidity".to_string());
-                score += 10.0;
-            }
+            // Liquidity depth analysis (25% weight)
+            let liquidity_ratio = (liquidity_usd.log10() / 5.0).min(1.0).max(0.0); // Log scale
+            liquidity_score = liquidity_ratio * 100.0;
             
             if liquidity_usd > 50000.0 {
-                signals.push("Excellent liquidity".to_string());
-                score += 10.0;
+                signals.push(format!("Excellent liquidity: ${:.0}K", liquidity_usd / 1000.0));
+            } else if liquidity_usd > 10000.0 {
+                signals.push(format!("Good liquidity: ${:.0}K", liquidity_usd / 1000.0));
             }
+            
+            // Composite score with weighted factors
+            let score = (momentum_score * 0.30) + (volume_score * 0.25) + (liquidity_score * 0.25);
+            
+            // Add sentiment bonus (20% weight) - derived from price action consistency
+            let sentiment_bonus = if pair.price_change.m5 > 0.0 
+                && pair.price_change.h1 > 0.0 
+                && pair.price_change.h6 > 0.0 {
+                20.0 // All timeframes bullish
+            } else if (pair.price_change.m5 > 0.0 && pair.price_change.h1 > 0.0) 
+                || (pair.price_change.h1 > 0.0 && pair.price_change.h6 > 0.0) {
+                10.0 // Partially bullish
+            } else {
+                0.0
+            };
+            
+            let final_score = (score + sentiment_bonus).min(100.0);
             
             // Only include opportunities with signals
             if !signals.is_empty() {
@@ -246,7 +376,7 @@ impl DexScreenerClient {
                     price_change_1h: pair.price_change.h1,
                     price_change_6h: pair.price_change.h6,
                     price_change_24h: pair.price_change.h24,
-                    opportunity_score: score,
+                    opportunity_score: final_score,
                     signals,
                 });
             }
