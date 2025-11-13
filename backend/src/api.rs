@@ -9,6 +9,9 @@ use crate::switchboard_oracle::SwitchboardClient;
 use crate::dex_screener::DexScreenerClient;
 use crate::pumpfun::PumpFunClient;
 use crate::signal_platform::SignalMarketplace;
+use crate::ml_models::TradingPredictor;
+use crate::security::validate_wallet_address;
+use crate::fee_optimization::FeeOptimizer;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiResponse<T> {
@@ -1000,6 +1003,102 @@ pub async fn start_server(
             })
     };
     
+    // ML Prediction endpoint
+    let ml_predict_route = {
+        let engine = engine.clone();
+        
+        warp::path!("ml" / "predict" / String)
+            .and(warp::get())
+            .and_then(move |symbol: String| {
+                let engine = engine.clone();
+                
+                async move {
+                    let engine_lock = engine.lock().await;
+                    let predictor = TradingPredictor::new();
+                    
+                    if let Some(market_data_queue) = engine_lock.market_state.get(&symbol) {
+                        if let Some(latest_data) = market_data_queue.back() {
+                            let features = predictor.generate_features(latest_data);
+                            let (confidence, price_change) = predictor.predict(&features).await;
+                            
+                            let mut response = HashMap::new();
+                            response.insert("symbol".to_string(), symbol);
+                            response.insert("confidence".to_string(), format!("{:.2}", confidence));
+                            response.insert("predicted_change".to_string(), format!("{:.4}", price_change));
+                            response.insert("current_price".to_string(), format!("{:.2}", latest_data.price));
+                            
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                response,
+                                "ML prediction generated"
+                            )))
+                        } else {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                HashMap::<String, String>::new(),
+                                "No market data available"
+                            )))
+                        }
+                    } else {
+                        Ok(warp::reply::json(&ApiResponse::new(
+                            HashMap::<String, String>::new(),
+                            "Symbol not found"
+                        )))
+                    }
+                }
+            })
+    };
+    
+    // Fee optimization endpoint
+    let fee_estimate_route = {
+        warp::path!("fees" / "estimate" / String)
+            .and(warp::get())
+            .and_then(move |priority: String| {
+                async move {
+                    let optimizer = FeeOptimizer::new(5000); // base fee
+                    let priority_level = match priority.as_str() {
+                        "low" => crate::fee_optimization::FeePriority::Low,
+                        "normal" => crate::fee_optimization::FeePriority::Normal,
+                        "high" => crate::fee_optimization::FeePriority::High,
+                        _ => crate::fee_optimization::FeePriority::Normal,
+                    };
+                    
+                    let estimate = optimizer.estimate_fee(priority_level);
+                    
+                    let mut response = HashMap::new();
+                    response.insert("priority".to_string(), priority);
+                    response.insert("min_fee".to_string(), estimate.min_fee.to_string());
+                    response.insert("recommended_fee".to_string(), estimate.recommended_fee.to_string());
+                    response.insert("priority_fee".to_string(), estimate.priority_fee.to_string());
+                    response.insert("max_fee".to_string(), estimate.max_fee.to_string());
+                    response.insert("confidence".to_string(), format!("{:.2}", estimate.confidence));
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        response,
+                        "Fee estimate calculated"
+                    )))
+                }
+            })
+    };
+    
+    // Wallet validation endpoint
+    let validate_wallet_route = {
+        warp::path!("validate" / "wallet" / String)
+            .and(warp::get())
+            .and_then(move |address: String| {
+                async move {
+                    let is_valid = validate_wallet_address(&address);
+                    
+                    let mut response = HashMap::new();
+                    response.insert("address".to_string(), address);
+                    response.insert("valid".to_string(), is_valid.to_string());
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        response,
+                        if is_valid { "Valid wallet address" } else { "Invalid wallet address" }
+                    )))
+                }
+            })
+    };
+    
     let routes = health
         .or(portfolio_route)
         .or(performance_route)
@@ -1032,6 +1131,9 @@ pub async fn start_server(
         .or(withdraw_route)
         .or(quant_analysis_route)
         .or(quant_overview_route)
+        .or(ml_predict_route)
+        .or(fee_estimate_route)
+        .or(validate_wallet_route)
         .with(cors)
         .with(warp::log("api"));
     
