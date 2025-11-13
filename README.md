@@ -30,6 +30,11 @@ A production-ready, AI-powered autonomous trading system for Solana with **real 
   - Opportunity scoring (0-100 scale)
 - **PumpFun**: Meme coin launch monitoring with sentiment/hype/risk analysis
 - **Jupiter DEX**: Swap quotes and perpetual futures data
+- **Jito BAM**: 🆕 Atomic bundle execution with MEV protection
+  - Submit atomic transaction bundles (all-or-nothing execution)
+  - Protection from front-running and sandwich attacks
+  - Priority fee optimization via validator tips
+  - Real-time bundle status tracking
 
 ### 🧠 Advanced AI & Machine Learning
 - **Reinforcement Learning**: Q-learning with 1,000-entry experience replay buffer
@@ -229,6 +234,14 @@ cargo run --bin setup_api_key
 - `GET /jupiter/quote/{input_mint}/{output_mint}/{amount}` - Get swap quote
 - `GET /ai/status` - DeepSeek AI configuration status and model info
 
+### Jito BAM Integration (3 endpoints) 🆕
+- `GET /jito/status` - Get Jito BAM configuration and network status
+- `POST /jito/bundle/status` - Check status of submitted bundle
+  - Body: `{"bundle_id": "uuid"}`
+  - Returns: Pending, Processing, Landed, Failed, or Dropped
+- `GET /jito/tip-account` - Get random Jito tip account for priority fees
+  - Returns one of 8 mainnet validator tip accounts
+
 ## 📁 Project Structure
 
 ```
@@ -259,6 +272,7 @@ SolanaTradeBot/
 │   │   ├── rpc_client.rs          # 🆕 Solana RPC utilities
 │   │   ├── quant_analysis.rs      # 🆕 10+ technical indicators
 │   │   ├── secure_config.rs       # 🆕 Encrypted API key storage
+│   │   ├── jito_bam.rs            # 🆕 Jito atomic bundle execution
 │   │   │
 │   │   └── bin/
 │   │       └── setup_api_key.rs   # 🆕 Interactive API key setup
@@ -605,6 +619,7 @@ Comprehensive guides (100+ KB total):
 - **ALGORITHM_IMPROVEMENTS.md**: 25+ algorithm enhancements (5.6 KB)
 - **FUTURISTIC_UI_GUIDE.md**: UI/UX design system (7.3 KB)
 - **PRODUCTION_READINESS_REVIEW.md**: Production checklist (33 KB)
+- **JITO_BAM_INTEGRATION.md**: 🆕 Jito atomic bundle guide (11 KB)
 - **MERGE_TO_MAIN.md**: Deployment instructions
 
 ## 🤝 Contributing
@@ -624,6 +639,7 @@ Contributions welcome! Areas for improvement:
 - [x] Real Switchboard Oracle integration
 - [x] DEX Screener API with rate limiting
 - [x] Reinforcement learning system
+- [x] Jito BAM atomic bundle integration
 - [x] X402 signal marketplace
 - [x] Futuristic glassmorphic UI
 - [x] Integrated risk management

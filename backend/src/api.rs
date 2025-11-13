@@ -53,10 +53,14 @@ pub async fn start_server(
     let pumpfun_client = Arc::new(PumpFunClient::new());
     
     // Create Signal Marketplace
-    let signal_marketplace = Arc::new(SignalMarketplace::new(rpc_url));
+    let signal_marketplace = Arc::new(SignalMarketplace::new(rpc_url.clone()));
     
     // Create Quant Analyzer
     let quant_analyzer = Arc::new(crate::quant_analysis::QuantAnalyzer::new());
+    
+    // Create Jito BAM client for atomic bundle execution
+    let use_mainnet = rpc_url.contains("mainnet");
+    let jito_client = Arc::new(crate::jito_bam::JitoBamClient::new(use_mainnet));
     
     let cors = crate::security::cors_config();
     
@@ -256,6 +260,79 @@ pub async fn start_server(
                 status.insert("features".to_string(), "AI-powered trading decisions, risk assessment".to_string());
                 
                 warp::reply::json(&ApiResponse::new(status, "AI status"))
+            })
+    };
+    
+    // Jito BAM endpoints for atomic bundle execution
+    let jito_status_route = {
+        let jito = jito_client.clone();
+        warp::path("jito")
+            .and(warp::path("status"))
+            .and(warp::get())
+            .map(move || {
+                let mut status = HashMap::new();
+                status.insert("enabled".to_string(), "true".to_string());
+                status.insert("network".to_string(), if use_mainnet { "mainnet".to_string() } else { "devnet".to_string() });
+                status.insert("block_engine".to_string(), jito.block_engine_url.clone());
+                status.insert("features".to_string(), "Atomic bundle execution, MEV protection, priority tips".to_string());
+                status.insert("tip_accounts".to_string(), jito.tip_accounts.len().to_string());
+                
+                warp::reply::json(&ApiResponse::new(status, "Jito BAM status"))
+            })
+    };
+    
+    #[derive(Debug, Deserialize)]
+    struct BundleStatusRequest {
+        bundle_id: String,
+    }
+    
+    let jito_bundle_status_route = {
+        let jito = jito_client.clone();
+        warp::path("jito")
+            .and(warp::path("bundle"))
+            .and(warp::path("status"))
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |request: BundleStatusRequest| {
+                let jito = jito.clone();
+                async move {
+                    match jito.get_bundle_status(&request.bundle_id).await {
+                        Ok(status) => {
+                            let mut response = HashMap::new();
+                            response.insert("bundle_id".to_string(), request.bundle_id);
+                            response.insert("status".to_string(), format!("{:?}", status));
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                response,
+                                "Bundle status retrieved"
+                            )))
+                        }
+                        Err(e) => {
+                            log::error!("Jito bundle status error: {}", e);
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                HashMap::<String, String>::new(),
+                                &format!("Failed to get bundle status: {}", e)
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+    
+    let jito_tip_account_route = {
+        let jito = jito_client.clone();
+        warp::path("jito")
+            .and(warp::path("tip-account"))
+            .and(warp::get())
+            .map(move || {
+                let tip_account = jito.get_random_tip_account()
+                    .map(|pubkey| pubkey.to_string())
+                    .unwrap_or_else(|| "No tip accounts available".to_string());
+                
+                let mut response = HashMap::new();
+                response.insert("tip_account".to_string(), tip_account);
+                response.insert("total_accounts".to_string(), jito.tip_accounts.len().to_string());
+                
+                warp::reply::json(&ApiResponse::new(response, "Random tip account"))
             })
     };
     
@@ -911,6 +988,9 @@ pub async fn start_server(
         .or(ws_route)
         .or(jupiter_route)
         .or(ai_route)
+        .or(jito_status_route)
+        .or(jito_bundle_status_route)
+        .or(jito_tip_account_route)
         .or(oracle_price_route)
         .or(oracle_feeds_route)
         .or(dex_search_route)

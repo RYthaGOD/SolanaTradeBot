@@ -25,6 +25,7 @@ mod wallet;
 mod pda;
 mod rpc_client;
 mod quant_analysis;
+mod jito_bam;
 
 #[cfg(test)]
 mod algorithm_tests;
