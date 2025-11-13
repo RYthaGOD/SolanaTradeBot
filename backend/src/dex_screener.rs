@@ -1,8 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::error::Error;
+use std::time::{Duration, SystemTime};
+use std::collections::HashMap;
 
-/// DEX Screener token pair data
+/// DEX Screener token pair data (matches official API response)
+/// API Docs: https://docs.dexscreener.com/api/reference
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenPair {
     pub chain_id: String,
     pub dex_id: String,
@@ -12,10 +16,14 @@ pub struct TokenPair {
     pub quote_token: Token,
     pub price_native: String,
     pub price_usd: Option<String>,
+    #[serde(default)]
+    pub txns: Transactions,
     pub volume: Volume,
     pub liquidity: Liquidity,
     pub fdv: Option<f64>,
     pub price_change: PriceChange,
+    #[serde(default)]
+    pub pair_created_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,16 +52,37 @@ pub struct Liquidity {
     pub quote: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PriceChange {
-    #[serde(rename = "h24")]
-    pub h24: f64,
-    #[serde(rename = "h6")]
-    pub h6: f64,
-    #[serde(rename = "h1")]
-    pub h1: f64,
-    #[serde(rename = "m5")]
+    #[serde(rename = "m5", default)]
     pub m5: f64,
+    #[serde(rename = "h1", default)]
+    pub h1: f64,
+    #[serde(rename = "h6", default)]
+    pub h6: f64,
+    #[serde(rename = "h24", default)]
+    pub h24: f64,
+}
+
+/// Transaction data for a pair
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Transactions {
+    #[serde(rename = "m5", default)]
+    pub m5: TransactionCount,
+    #[serde(rename = "h1", default)]
+    pub h1: TransactionCount,
+    #[serde(rename = "h6", default)]
+    pub h6: TransactionCount,
+    #[serde(rename = "h24", default)]
+    pub h24: TransactionCount,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TransactionCount {
+    #[serde(default)]
+    pub buys: i32,
+    #[serde(default)]
+    pub sells: i32,
 }
 
 /// Response from DEX Screener API
@@ -81,72 +110,144 @@ pub struct TradingOpportunity {
 }
 
 /// DEX Screener client for token discovery and analysis
+/// Official API: https://api.dexscreener.com/latest
+/// Rate Limit: 300 requests per minute
 pub struct DexScreenerClient {
     api_url: String,
     client: reqwest::Client,
+    last_request_time: std::sync::Arc<std::sync::Mutex<SystemTime>>,
+    request_count: std::sync::Arc<std::sync::Mutex<u32>>,
 }
 
 impl DexScreenerClient {
     pub fn new() -> Self {
         Self {
             api_url: "https://api.dexscreener.com/latest".to_string(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(10))
+                .user_agent("SolanaTradeBot/1.0")
+                .build()
+                .unwrap(),
+            last_request_time: std::sync::Arc::new(std::sync::Mutex::new(SystemTime::now())),
+            request_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
         }
+    }
+    
+    /// Check and enforce rate limit (300 requests per minute)
+    async fn check_rate_limit(&self) -> Result<(), Box<dyn Error>> {
+        let mut last_time = self.last_request_time.lock().unwrap();
+        let mut count = self.request_count.lock().unwrap();
+        
+        let now = SystemTime::now();
+        let elapsed = now.duration_since(*last_time).unwrap_or(Duration::from_secs(60));
+        
+        // Reset counter after 1 minute
+        if elapsed >= Duration::from_secs(60) {
+            *count = 0;
+            *last_time = now;
+        }
+        
+        // Check rate limit
+        if *count >= 300 {
+            let wait_time = Duration::from_secs(60) - elapsed;
+            log::warn!("Rate limit reached, waiting {:?}", wait_time);
+            tokio::time::sleep(wait_time).await;
+            *count = 0;
+            *last_time = SystemTime::now();
+        }
+        
+        *count += 1;
+        Ok(())
     }
     
     /// Search for tokens by query
+    /// Endpoint: GET /dex/search/?q={query}
     pub async fn search_tokens(&self, query: &str) -> Result<Vec<TokenPair>, Box<dyn Error>> {
+        self.check_rate_limit().await?;
+        
         let url = format!("{}/dex/search/?q={}", self.api_url, query);
         
-        log::debug!("Searching DEX Screener for: {}", query);
+        log::info!("Searching DEX Screener for: {}", query);
         
         let response = self.client
             .get(&url)
-            .header("User-Agent", "Mozilla/5.0")
             .send()
-            .await?;
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
-        if !response.status().is_success() {
-            return Err(format!("DEX Screener API error: {}", response.status()).into());
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("DEX Screener API error {}: {}", status, error_text).into());
         }
         
-        let data: DexScreenerResponse = response.json().await?;
+        let data: DexScreenerResponse = response.json().await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
         
-        Ok(data.pairs.unwrap_or_default())
+        let pairs = data.pairs.unwrap_or_default();
+        log::info!("Found {} pairs for query: {}", pairs.len(), query);
+        
+        Ok(pairs)
     }
     
-    /// Get token pairs by token address
+    /// Get token pairs by token address (supports multiple addresses)
+    /// Endpoint: GET /dex/tokens/{tokenAddresses}
+    /// Example: /dex/tokens/0x2170...abc,0x3171...def
     pub async fn get_token_pairs(&self, token_address: &str) -> Result<Vec<TokenPair>, Box<dyn Error>> {
+        self.check_rate_limit().await?;
+        
         let url = format!("{}/dex/tokens/{}", self.api_url, token_address);
         
-        log::debug!("Fetching token pairs for: {}", token_address);
+        log::info!("Fetching token pairs for: {}", token_address);
         
         let response = self.client
             .get(&url)
-            .header("User-Agent", "Mozilla/5.0")
             .send()
-            .await?;
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
-        if !response.status().is_success() {
-            return Err(format!("DEX Screener API error: {}", response.status()).into());
+        let status = response.status();
+        if !status.is_success() {
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("DEX Screener API error {}: {}", status, error_text).into());
         }
         
-        let data: DexScreenerResponse = response.json().await?;
+        let data: DexScreenerResponse = response.json().await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
         
-        Ok(data.pairs.unwrap_or_default())
+        let pairs = data.pairs.unwrap_or_default();
+        log::info!("Found {} pairs for token: {}", pairs.len(), token_address);
+        
+        Ok(pairs)
+    }
+    
+    /// Get token pairs for multiple addresses at once
+    /// More efficient than calling get_token_pairs multiple times
+    pub async fn get_multiple_token_pairs(&self, token_addresses: &[String]) -> Result<Vec<TokenPair>, Box<dyn Error>> {
+        if token_addresses.is_empty() {
+            return Ok(Vec::new());
+        }
+        
+        // DexScreener supports comma-separated addresses
+        let addresses = token_addresses.join(",");
+        self.get_token_pairs(&addresses).await
     }
     
     /// Get pair data by pair address
+    /// Endpoint: GET /dex/pairs/{chainId}/{pairAddresses}
+    /// Supports multiple pair addresses: /dex/pairs/solana/addr1,addr2
     pub async fn get_pair(&self, chain: &str, pair_address: &str) -> Result<Option<TokenPair>, Box<dyn Error>> {
+        self.check_rate_limit().await?;
+        
         let url = format!("{}/dex/pairs/{}/{}", self.api_url, chain, pair_address);
         
-        log::debug!("Fetching pair data for: {}/{}", chain, pair_address);
+        log::info!("Fetching pair data for: {}/{}", chain, pair_address);
         
         let response = self.client
             .get(&url)
-            .header("User-Agent", "Mozilla/5.0")
             .send()
-            .await?;
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
         
         if !response.status().is_success() {
             return Err(format!("DEX Screener API error: {}", response.status()).into());
