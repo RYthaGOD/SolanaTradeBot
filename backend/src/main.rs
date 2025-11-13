@@ -23,6 +23,7 @@ mod enhanced_marketplace;
 mod wallet;
 mod pda;
 mod rpc_client;
+mod quant_analysis;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;

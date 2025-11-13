@@ -15,6 +15,7 @@ pub struct SolanaClient {
     pub wallet_address: Option<String>,
     pub treasury_address: Option<String>,
     pub rpc_url: Option<String>,
+    pub trading_budget: f64,
 }
 
 impl SolanaClient {
@@ -26,6 +27,7 @@ impl SolanaClient {
             wallet_address: None,
             treasury_address: None,
             rpc_url: None,
+            trading_budget: 10000.0,
         }
     }
 
@@ -64,6 +66,14 @@ impl SolanaClient {
             }
         };
 
+        // Get trading budget from environment or use default
+        let trading_budget = std::env::var("TRADING_BUDGET")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(10000.0);
+        
+        log::info!("💵 Trading budget set to: ${:.2}", trading_budget);
+
         Self {
             connected: true,
             wallet_balance,
@@ -71,6 +81,7 @@ impl SolanaClient {
             wallet_address: Some(wallet_pubkey.to_string()),
             treasury_address: treasury_pda.map(|pda| pda.address.to_string()),
             rpc_url: Some(rpc_url),
+            trading_budget,
         }
     }
     
@@ -118,6 +129,51 @@ impl SolanaClient {
         } else {
             Err("No RPC connection configured".to_string())
         }
+    }
+
+    /// Set trading budget
+    pub fn set_trading_budget(&mut self, budget: f64) -> Result<(), String> {
+        if budget <= 0.0 {
+            return Err("Budget must be positive".to_string());
+        }
+        
+        self.trading_budget = budget;
+        log::info!("💵 Trading budget updated to: ${:.2}", budget);
+        Ok(())
+    }
+
+    /// Get current trading budget
+    pub fn get_trading_budget(&self) -> f64 {
+        self.trading_budget
+    }
+
+    /// Deposit funds to trading budget (simulated)
+    pub fn deposit_funds(&mut self, amount: f64) -> Result<f64, String> {
+        if amount <= 0.0 {
+            return Err("Deposit amount must be positive".to_string());
+        }
+
+        self.trading_budget += amount;
+        log::info!("💰 Deposited ${:.2} to trading budget. New budget: ${:.2}", 
+                 amount, self.trading_budget);
+        Ok(self.trading_budget)
+    }
+
+    /// Withdraw funds from trading budget (simulated)
+    pub fn withdraw_funds(&mut self, amount: f64) -> Result<f64, String> {
+        if amount <= 0.0 {
+            return Err("Withdrawal amount must be positive".to_string());
+        }
+
+        if amount > self.trading_budget {
+            return Err(format!("Insufficient funds. Budget: ${:.2}, Requested: ${:.2}", 
+                             self.trading_budget, amount));
+        }
+
+        self.trading_budget -= amount;
+        log::info!("💸 Withdrew ${:.2} from trading budget. New budget: ${:.2}", 
+                 amount, self.trading_budget);
+        Ok(self.trading_budget)
     }
 }
 
