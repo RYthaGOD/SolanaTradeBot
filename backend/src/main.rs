@@ -30,8 +30,8 @@ async fn main() {
     log::info!("🚀 Starting AgentBurn Solana Trading System...");
     log::info!("🤖 Enhanced with Switchboard Oracle, DEX Screener, and PumpFun integrations");
 
-    let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new()));
     let risk_manager = Arc::new(Mutex::new(risk_management::RiskManager::new(10000.0, 0.1)));
+    let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new(risk_manager.clone())));
     let _solana_client = Arc::new(Mutex::new(solana_integration::SolanaClient::new()));
 
     // Start market data simulation

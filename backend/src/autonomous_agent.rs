@@ -327,8 +327,8 @@ mod tests {
 
     #[test]
     fn test_calculate_position_size() {
-        let engine = Arc::new(Mutex::new(TradingEngine::new()));
         let risk_manager = Arc::new(Mutex::new(RiskManager::new(10000.0, 0.1)));
+        let engine = Arc::new(Mutex::new(TradingEngine::new(risk_manager.clone())));
         let agent = AutonomousAgent::new(
             "https://api.mainnet-beta.solana.com".to_string(),
             engine,
@@ -342,8 +342,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_agent_stats() {
-        let engine = Arc::new(Mutex::new(TradingEngine::new()));
         let risk_manager = Arc::new(Mutex::new(RiskManager::new(10000.0, 0.1)));
+        let engine = Arc::new(Mutex::new(TradingEngine::new(risk_manager.clone())));
         let agent = AutonomousAgent::new(
             "https://api.mainnet-beta.solana.com".to_string(),
             engine,

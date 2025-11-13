@@ -3,6 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::risk_management::RiskManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketData {
@@ -35,27 +36,34 @@ pub enum TradeAction {
     Hold,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TradingEngine {
     pub market_state: HashMap<String, VecDeque<MarketData>>,
     pub portfolio: HashMap<String, f64>,
     pub initial_balance: f64,
     pub current_balance: f64,
     pub trade_history: Vec<TradingSignal>,
+    pub risk_manager: Arc<Mutex<RiskManager>>,
 }
 
 impl TradingEngine {
-    pub fn new() -> Self {
+    pub fn new(risk_manager: Arc<Mutex<RiskManager>>) -> Self {
         Self {
             market_state: HashMap::new(),
             portfolio: HashMap::new(),
             initial_balance: 10000.0,
             current_balance: 10000.0,
             trade_history: Vec::new(),
+            risk_manager,
         }
     }
     
-    pub fn process_market_data(&mut self, data: MarketData) -> Option<TradingSignal> {
+    pub fn new_default() -> Self {
+        let risk_manager = Arc::new(Mutex::new(RiskManager::new(10000.0, 0.1)));
+        Self::new(risk_manager)
+    }
+    
+    pub async fn process_market_data(&mut self, data: MarketData) -> Option<TradingSignal> {
         let symbol_data = self.market_state
             .entry(data.symbol.clone())
             .or_insert_with(|| VecDeque::with_capacity(100));
@@ -77,7 +85,7 @@ impl TradingEngine {
                     symbol: data.symbol.clone(),
                     price: data.price,
                     confidence: 0.7,
-                    size: self.calculate_position_size(0.7, data.price),
+                    size: self.calculate_position_size(0.7, data.price).await,
                     stop_loss: data.price * 0.95,
                     take_profit: data.price * 1.05,
                     timestamp: Utc::now().timestamp(),
@@ -87,13 +95,14 @@ impl TradingEngine {
             } else if sma_10 < sma_20 * 0.98 {
                 if let Some(&position) = self.portfolio.get(&data.symbol) {
                     if position > 0.0 {
+                        let position_size = self.calculate_position_size(0.6, data.price).await;
                         let signal = TradingSignal {
                             id: uuid::Uuid::new_v4().to_string(),
                             action: TradeAction::Sell,
                             symbol: data.symbol.clone(),
                             price: data.price,
                             confidence: 0.6,
-                            size: position.min(self.calculate_position_size(0.6, data.price)),
+                            size: position.min(position_size),
                             stop_loss: data.price * 1.05,
                             take_profit: data.price * 0.95,
                             timestamp: Utc::now().timestamp(),
@@ -108,14 +117,28 @@ impl TradingEngine {
         None
     }
     
-    fn calculate_position_size(&self, confidence: f64, price: f64) -> f64 {
-        let max_position_value = self.current_balance * 0.1;
-        let shares = (max_position_value * confidence) / price;
-        shares.max(0.0)
+    async fn calculate_position_size(&self, confidence: f64, price: f64) -> f64 {
+        let risk_manager = self.risk_manager.lock().await;
+        risk_manager.calculate_position_size(confidence, price)
     }
     
-    pub fn execute_trade(&mut self, signal: &TradingSignal) -> bool {
-        match signal.action {
+    pub async fn execute_trade(&mut self, signal: &TradingSignal) -> bool {
+        // Validate trade with risk manager first
+        let risk_manager = self.risk_manager.lock().await;
+        let is_valid = risk_manager.validate_trade(
+            &signal.symbol,
+            signal.size,
+            signal.price,
+            signal.confidence,
+        );
+        drop(risk_manager);
+        
+        if !is_valid {
+            log::warn!("❌ Trade rejected by risk manager");
+            return false;
+        }
+        
+        let success = match signal.action {
             TradeAction::Buy => {
                 let cost = signal.size * signal.price;
                 if cost <= self.current_balance {
@@ -147,7 +170,36 @@ impl TradingEngine {
             TradeAction::Hold => {
                 false
             }
+        };
+        
+        // Record trade in risk manager if successful
+        if success {
+            let action_str = match signal.action {
+                TradeAction::Buy => "BUY",
+                TradeAction::Sell => "SELL",
+                TradeAction::Hold => "HOLD",
+            };
+            
+            let pnl = match signal.action {
+                TradeAction::Sell => signal.size * signal.price, // Simplified P&L calculation
+                _ => 0.0,
+            };
+            
+            let trade = crate::risk_management::Trade {
+                id: signal.id.clone(),
+                symbol: signal.symbol.clone(),
+                action: action_str.to_string(),
+                size: signal.size,
+                price: signal.price,
+                timestamp: signal.timestamp,
+                pnl,
+            };
+            
+            let mut risk_manager = self.risk_manager.lock().await;
+            risk_manager.record_trade(trade);
         }
+        
+        success
     }
     
     pub fn get_portfolio_value(&self, current_prices: &HashMap<String, f64>) -> f64 {
