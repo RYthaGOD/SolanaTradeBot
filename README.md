@@ -16,6 +16,9 @@ A sophisticated AI-powered trading system for Solana, built with Rust and React.
 - **PumpFun Meme Tracking**: Monitor and analyze meme coin launches with sentiment analysis
 - **Autonomous Agent**: Multi-source decision-making agent that trades 24/7
 - **X402 Signal Platform**: Trade signals as assets using the X402 protocol
+- **Wallet Integration**: Solana wallet management with keypair generation and secure storage
+- **Treasury PDA**: Program Derived Address for agent trading treasury
+- **RPC Integration**: Direct connection to Solana blockchain via RPC endpoints
 
 ## 🛠️ Tech Stack
 
@@ -70,6 +73,10 @@ Access the application:
 - `GET /signals/marketplace/provider/{id}` - Provider statistics
 - `POST /signals/marketplace/purchase` - Purchase a signal using X402 protocol
 
+### Wallet & Treasury
+- `GET /wallet/status` - Get wallet information (address, balance, transaction count)
+- `GET /treasury/status` - Get treasury PDA information
+
 ### DEX Integration
 - `GET /jupiter/quote/{input_mint}/{output_mint}/{amount}` - Get Jupiter swap quote
 - `GET /ai/status` - DeepSeek AI configuration status
@@ -111,12 +118,52 @@ agentburn-solana-trader/
 - Maximum drawdown limit of 10%
 - Confidence threshold of 50% for trade execution
 
+### Wallet & Blockchain Integration
+
+**Wallet Management:**
+- Automatic keypair generation or load from environment variable (`WALLET_PRIVATE_KEY`)
+- Support for Solana CLI JSON format wallet files
+- Secure storage with proper file permissions (0600 on Unix)
+- Base58 private key encoding/decoding
+
+**Treasury PDA (Program Derived Address):**
+- Deterministic address derivation for agent trading treasury
+- Separate treasury account for isolating agent funds
+- Authority-based access control
+- Seed-based PDA derivation for multiple agent treasuries
+
+**RPC Integration:**
+- Direct connection to Solana blockchain (devnet/mainnet-beta)
+- Real-time balance queries
+- Transaction submission and confirmation
+- Account state queries
+- Block and slot information
+
+**API Endpoints:**
+```bash
+# Check wallet status
+curl http://localhost:8080/wallet/status
+
+# Check treasury PDA
+curl http://localhost:8080/treasury/status
+```
+
+**Configuration:**
+```bash
+# Set RPC endpoint (defaults to devnet)
+SOLANA_RPC_URL=https://api.devnet.solana.com
+
+# Optional: Provide existing wallet (otherwise generates new)
+WALLET_PRIVATE_KEY=your_base58_private_key_here
+```
+
 ## 🚨 Important Notes
 
-- This is a **simulated trading environment** - no real funds are at risk
-- Market data is generated algorithmically for demonstration purposes
-- Trading signals are based on simple moving average strategies
-- Real Solana integration requires additional configuration (wallet, RPC endpoint)
+- Trading can be done in **simulation mode** (default) or with **real Solana integration**
+- In simulation mode, no real funds are at risk
+- For real trading, configure wallet and RPC endpoint in `.env`
+- Always test on devnet before using mainnet
+- Market data can be simulated or fetched from live sources (Switchboard, DEX Screener)
 
 ## 🎯 X402 Signal Trading Protocol
 
