@@ -30,6 +30,7 @@ impl<T> ApiResponse<T> {
 pub async fn start_server(
     engine: Arc<Mutex<super::trading_engine::TradingEngine>>,
     risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
+    solana_client: Arc<Mutex<super::solana_integration::SolanaClient>>,
 ) {
     log::info!("🌐 Starting Warp server on :8080");
     
@@ -592,6 +593,73 @@ pub async fn start_server(
             })
     };
     
+    // Wallet status route
+    let wallet_status_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("wallet" / "status")
+            .and(warp::get())
+            .and_then(move || {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let client_lock = solana_client.lock().await;
+                    
+                    let mut status = HashMap::new();
+                    status.insert("connected", serde_json::to_value(client_lock.connected).unwrap());
+                    status.insert("balance", serde_json::to_value(client_lock.wallet_balance).unwrap());
+                    status.insert("transaction_count", serde_json::to_value(client_lock.transaction_count).unwrap());
+                    
+                    if let Some(addr) = client_lock.get_wallet_address() {
+                        status.insert("wallet_address", serde_json::to_value(addr).unwrap());
+                    }
+                    
+                    if let Some(treasury) = client_lock.get_treasury_address() {
+                        status.insert("treasury_address", serde_json::to_value(treasury).unwrap());
+                    }
+                    
+                    if let Some(rpc) = &client_lock.rpc_url {
+                        status.insert("rpc_url", serde_json::to_value(rpc).unwrap());
+                    }
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        status,
+                        "Wallet status retrieved"
+                    )))
+                }
+            })
+    };
+    
+    // Treasury status route
+    let treasury_status_route = {
+        let solana_client = solana_client.clone();
+        
+        warp::path!("treasury" / "status")
+            .and(warp::get())
+            .and_then(move || {
+                let solana_client = solana_client.clone();
+                
+                async move {
+                    let client_lock = solana_client.lock().await;
+                    
+                    let mut status = HashMap::new();
+                    
+                    if let Some(treasury) = client_lock.get_treasury_address() {
+                        status.insert("address", serde_json::to_value(treasury).unwrap());
+                        status.insert("type", serde_json::to_value("PDA").unwrap());
+                        status.insert("purpose", serde_json::to_value("Agent Trading Treasury").unwrap());
+                    } else {
+                        status.insert("status", serde_json::to_value("Not initialized").unwrap());
+                    }
+                    
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        status,
+                        "Treasury status retrieved"
+                    )))
+                }
+            })
+    };
+    
     let routes = health
         .or(portfolio_route)
         .or(performance_route)
@@ -613,6 +681,8 @@ pub async fn start_server(
         .or(signal_provider_register_route)
         .or(signal_provider_stats_route)
         .or(signal_purchase_route)
+        .or(wallet_status_route)
+        .or(treasury_status_route)
         .with(cors)
         .with(warp::log("api"));
     
