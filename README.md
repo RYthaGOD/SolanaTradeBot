@@ -10,6 +10,13 @@ A sophisticated AI-powered trading system for Solana, built with Rust and React.
 - **Solana Integration**: Ready for DEX trading and wallet integration (currently simulated)
 - **Performance Analytics**: Comprehensive trading metrics including Sharpe ratio, win rate, and P&L tracking
 
+### 🆕 New: Live Data & Autonomous Trading
+- **Switchboard Oracle**: Live price feeds for SOL, BTC, ETH, and USDC with confidence intervals
+- **DEX Screener Integration**: Real-time token discovery, trending analysis, and opportunity scoring
+- **PumpFun Meme Tracking**: Monitor and analyze meme coin launches with sentiment analysis
+- **Autonomous Agent**: Multi-source decision-making agent that trades 24/7
+- **X402 Signal Platform**: Trade signals as assets using the X402 protocol
+
 ## 🛠️ Tech Stack
 
 **Backend:**
@@ -38,11 +45,34 @@ Access the application:
 
 ## 📊 API Endpoints
 
+### Core Trading
 - `GET /health` - Health check
 - `GET /portfolio` - Portfolio data with positions and P&L
 - `GET /performance` - Trading performance metrics
 - `GET /market-data` - Live market data for SOL/USDC, BTC/USDC, ETH/USDC
 - `GET /signals` - Recent AI-generated trading signals
+- `WS /ws` - WebSocket real-time updates
+
+### Live Data Feeds
+- `GET /oracle/price/{symbol}` - Switchboard Oracle live price for symbol
+- `GET /oracle/feeds` - All Switchboard Oracle feeds
+- `GET /dex/search/{query}` - Search tokens on DEX Screener
+- `GET /dex/opportunities` - Top trading opportunities from DEX Screener
+- `GET /pumpfun/launches` - Recent meme coin launches from PumpFun
+- `GET /pumpfun/signals` - Meme coin trading signals
+
+### X402 Signal Trading Platform
+- `GET /signals/marketplace/stats` - Marketplace statistics
+- `GET /signals/marketplace/active` - All active tradeable signals
+- `GET /signals/marketplace/symbol/{symbol}` - Signals for specific token
+- `POST /signals/marketplace/generate/{provider_id}` - Generate and publish signals
+- `POST /signals/marketplace/provider/register` - Register as signal provider
+- `GET /signals/marketplace/provider/{id}` - Provider statistics
+- `POST /signals/marketplace/purchase` - Purchase a signal using X402 protocol
+
+### DEX Integration
+- `GET /jupiter/quote/{input_mint}/{output_mint}/{amount}` - Get Jupiter swap quote
+- `GET /ai/status` - DeepSeek AI configuration status
 
 ## 📁 Project Structure
 
@@ -88,13 +118,43 @@ agentburn-solana-trader/
 - Trading signals are based on simple moving average strategies
 - Real Solana integration requires additional configuration (wallet, RPC endpoint)
 
+## 🎯 X402 Signal Trading Protocol
+
+The platform implements the **X402 protocol** for automated signal trading between agents:
+
+### What is X402?
+X402 is a protocol for decentralized trading signal exchange that enables:
+- **Signal Marketplace**: Buy and sell trading signals as tradeable assets
+- **Provider Reputation**: Track provider success rates and earnings
+- **Automated Trading**: Agents can purchase and execute signals autonomously  
+- **Multi-Source Analysis**: Signals generated from Oracle, DEX, and PumpFun data
+
+### Using the Signal Platform
+```bash
+# Register as a signal provider
+curl -X POST http://localhost:8080/signals/marketplace/provider/register \
+  -H "Content-Type: application/json" \
+  -d '{"id": "provider1", "name": "My Trading Signals"}'
+
+# Generate signals from all data sources
+curl -X POST http://localhost:8080/signals/marketplace/generate/provider1
+
+# View active signals
+curl http://localhost:8080/signals/marketplace/active
+
+# Purchase a signal
+curl -X POST http://localhost:8080/signals/marketplace/purchase \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "trader1", "signal_id": "abc123", "payment": 10.0}'
+```
+
 ## 🔮 Future Enhancements
 
 - Real Solana blockchain integration with DEX connectivity
 - Advanced ML models for price prediction
-- WebSocket support for real-time streaming data
 - Backtesting engine with historical data
 - Multi-strategy support and strategy optimization
+- X402 on-chain signal marketplace with smart contracts
 
 ## ⚠️ Risk Warning
 
