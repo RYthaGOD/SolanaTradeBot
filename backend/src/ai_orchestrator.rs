@@ -389,7 +389,7 @@ impl AIOrchestrator {
         }
     }
 
-    // ATOMIC HANDLER: Wallet operations (combines balance, refresh, address)
+    // ATOMIC HANDLER: Wallet operations (combines balance, refresh, address, management)
     async fn handle_wallet(&self, params: HashMap<String, String>) -> Result<String, String> {
         let action = params.get("action").map(|s| s.as_str()).unwrap_or("info");
         
@@ -425,7 +425,58 @@ impl AIOrchestrator {
                     address.unwrap_or_else(|| "None".to_string())
                 ))
             }
-            _ => Err(format!("Unknown wallet action: {}", action))
+            "list" => {
+                // Use WalletManager.list_wallets() (previously unused)
+                let wallet_manager = crate::key_manager::WalletManager::new();
+                let wallets = wallet_manager.list_wallets();
+                
+                Ok(format!("WALLET LIST: {} wallets configured: {:?}", wallets.len(), wallets))
+            }
+            "add" => {
+                // Use WalletManager.add_wallet() (previously unused)
+                let name = params.get("name").ok_or("Missing wallet name")?;
+                let mut wallet_manager = crate::key_manager::WalletManager::new();
+                let config = crate::key_manager::WalletConfig {
+                    address: params.get("address").unwrap_or(&"placeholder_address".to_string()).clone(),
+                    encrypted_key: params.get("key").unwrap_or(&"placeholder_key".to_string()).clone(),
+                    key_type: crate::key_manager::KeyType::Base58,
+                };
+                wallet_manager.add_wallet(name.clone(), config);
+                
+                Ok(format!("WALLET ADD: Added wallet '{}'", name))
+            }
+            "get" => {
+                // Use WalletManager.get_wallet() (previously unused)
+                let name = params.get("name").ok_or("Missing wallet name")?;
+                let wallet_manager = crate::key_manager::WalletManager::new();
+                
+                match wallet_manager.get_wallet(name) {
+                    Some(config) => Ok(format!("WALLET GET: Found wallet '{}' at {}", name, config.address)),
+                    None => Err(format!("Wallet '{}' not found", name))
+                }
+            }
+            "remove" => {
+                // Use WalletManager.remove_wallet() (previously unused)
+                let name = params.get("name").ok_or("Missing wallet name")?;
+                let mut wallet_manager = crate::key_manager::WalletManager::new();
+                let removed = wallet_manager.remove_wallet(name);
+                
+                if removed {
+                    Ok(format!("WALLET REMOVE: Removed wallet '{}'", name))
+                } else {
+                    Err(format!("Wallet '{}' not found", name))
+                }
+            }
+            "default" => {
+                // Use WalletManager.get_default_wallet() (previously unused)
+                let wallet_manager = crate::key_manager::WalletManager::new();
+                
+                match wallet_manager.get_default_wallet() {
+                    Some(config) => Ok(format!("WALLET DEFAULT: {}", config.address)),
+                    None => Err("No default wallet configured".to_string())
+                }
+            }
+            _ => Err(format!("Unknown wallet action: {}. Use: info, refresh, list, add, get, remove, default", action))
         }
     }
 

@@ -101,6 +101,16 @@ async fn main() {
     ));
     log::info!("✅ AI Orchestrator ready with {} available functions", ai_orchestrator.get_available_functions().len());
 
+    // Start periodic rate limiter cleanup (uses previously unused cleanup() method)
+    let cleanup_limiter = rate_limiter.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(300)).await; // Every 5 minutes
+            cleanup_limiter.lock().await.cleanup().await;
+            log::debug!("🧹 Rate limiter cleanup completed");
+        }
+    });
+
     // Start market data simulation
     let market_engine = trading_engine.clone();
     tokio::spawn(async move {
