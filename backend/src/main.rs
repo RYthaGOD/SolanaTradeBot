@@ -86,6 +86,18 @@ async fn main() {
     log::info!("📡 Initializing WebSocket broadcaster...");
     let ws_broadcaster = websocket::create_ws_broadcaster();
     
+    // Initialize Reinforcement Learning Coordinator
+    log::info!("🤖 Initializing RL Coordinator...");
+    let rl_coordinator = Arc::new(Mutex::new(reinforcement_learning::LearningCoordinator::new()));
+    
+    // Initialize Meme Analyzer for memecoin analysis
+    log::info!("🎪 Initializing Meme Analyzer...");
+    let meme_analyzer = Arc::new(Mutex::new(pumpfun::MemeAnalyzer::new()));
+    
+    // Initialize X402 Signal Platform
+    log::info!("📡 Initializing X402 Signal Platform...");
+    let signal_platform = Arc::new(Mutex::new(signal_platform::SignalMarketplace::new(rpc_url.clone())));
+    
     // Initialize AI Orchestrator that coordinates all systems with DeepSeek intelligence
     log::info!("🤖 Initializing AI Orchestrator...");
     let ai_orchestrator = Arc::new(ai_orchestrator::AIOrchestrator::new(
@@ -98,6 +110,9 @@ async fn main() {
         risk_manager.clone(),
         solana_client.clone(),
         Some(ws_broadcaster.clone()),
+        rl_coordinator.clone(),
+        meme_analyzer.clone(),
+        signal_platform.clone(),
     ));
     log::info!("✅ AI Orchestrator ready with {} available functions", ai_orchestrator.get_available_functions().len());
 
