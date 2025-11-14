@@ -8,6 +8,7 @@ use crate::dex_screener::DexScreenerClient;
 use crate::pumpfun::PumpFunClient;
 use crate::jupiter_integration::JupiterClient;
 use crate::signal_platform::{SignalMarketplace, TradingSignalData, SignalAction, SignalStatus};
+use crate::reinforcement_learning::{RLAgent, LearningCoordinator};
 
 /// Provider specialization type
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,7 +21,7 @@ pub enum ProviderType {
     MasterAnalyzer,
 }
 
-/// Specialized provider agent
+/// Specialized provider agent with RL integration
 pub struct SpecializedProvider {
     pub provider_id: String,
     pub provider_name: String,
@@ -32,6 +33,8 @@ pub struct SpecializedProvider {
     jupiter_client: Arc<JupiterClient>,
     check_interval_secs: u64,
     capital: Arc<Mutex<f64>>,
+    rl_agent: Arc<RLAgent>,
+    rl_coordinator: Option<Arc<Mutex<LearningCoordinator>>>,
 }
 
 impl SpecializedProvider {
@@ -42,6 +45,13 @@ impl SpecializedProvider {
         marketplace: Arc<SignalMarketplace>,
         rpc_url: String,
     ) -> Self {
+        // Create dedicated RL agent for this provider
+        let rl_agent = Arc::new(RLAgent::new(
+            format!("{}_agent", provider_id),
+            provider_id.clone(),
+            None, // DeepSeek client optional
+        ));
+        
         Self {
             provider_id,
             provider_name,
@@ -52,8 +62,16 @@ impl SpecializedProvider {
             pumpfun_client: Arc::new(PumpFunClient::new()),
             jupiter_client: Arc::new(JupiterClient::new()),
             check_interval_secs: 60,
-            capital: Arc::new(Mutex::new(10000.0)), // Starting capital for signal trader
+            capital: Arc::new(Mutex::new(10000.0)),
+            rl_agent,
+            rl_coordinator: None,
         }
+    }
+    
+    /// Connect to RL coordinator for centralized learning
+    pub fn with_rl_coordinator(mut self, coordinator: Arc<Mutex<LearningCoordinator>>) -> Self {
+        self.rl_coordinator = Some(coordinator);
+        self
     }
 
     /// Main provider loop
@@ -104,8 +122,17 @@ impl SpecializedProvider {
 
         let mut published_count = 0;
         for signal in signals {
-            match self.marketplace.publish_signal(signal).await {
-                Ok(_) => published_count += 1,
+            match self.marketplace.publish_signal(signal.clone()).await {
+                Ok(signal_id) => {
+                    published_count += 1;
+                    log::debug!("Published signal {} for {}", signal_id, signal.symbol);
+                    
+                    // Register this agent with RL coordinator if connected
+                    if let Some(coordinator) = &self.rl_coordinator {
+                        let coordinator_lock = coordinator.lock().await;
+                        coordinator_lock.register_agent(self.rl_agent.clone()).await;
+                    }
+                }
                 Err(e) => log::warn!("Failed to publish signal: {}", e),
             }
         }
@@ -724,6 +751,55 @@ impl SpecializedProvider {
         } else {
             Ok(None)
         }
+    }
+    
+    /// Get RL agent performance metrics
+    pub async fn get_performance_metrics(&self) -> crate::reinforcement_learning::AgentPerformance {
+        self.rl_agent.get_performance().await
+    }
+    
+    /// Update RL agent with trade outcome
+    pub async fn learn_from_outcome(&self, symbol: String, entry_price: f64, exit_price: f64, action: &str, confidence: f64) {
+        use crate::reinforcement_learning::{Experience, MarketState, Action};
+        
+        let reward = RLAgent::calculate_reward(entry_price, exit_price, action, confidence);
+        
+        let experience = Experience {
+            state: MarketState {
+                symbol: symbol.clone(),
+                price: entry_price,
+                volume: 0.0,
+                price_change_1h: 0.0,
+                price_change_24h: 0.0,
+                sentiment_score: confidence * 100.0,
+                liquidity: 0.0,
+                volatility: 0.0,
+                market_cap: None,
+            },
+            action: Action {
+                action_type: action.to_string(),
+                confidence,
+                size: 0.05,
+                price: entry_price,
+            },
+            reward,
+            next_state: Some(MarketState {
+                symbol: symbol.clone(),
+                price: exit_price,
+                volume: 0.0,
+                price_change_1h: ((exit_price - entry_price) / entry_price) * 100.0,
+                price_change_24h: 0.0,
+                sentiment_score: confidence * 100.0,
+                liquidity: 0.0,
+                volatility: 0.0,
+                market_cap: None,
+            }),
+            timestamp: Utc::now().timestamp(),
+            provider_id: self.provider_id.clone(),
+        };
+        
+        self.rl_agent.record_experience(experience).await;
+        log::info!("🧠 {} learned from {} trade: reward={:.3}", self.provider_name, symbol, reward);
     }
 }
 

@@ -142,17 +142,24 @@ async fn main() {
     // Initialize Signal Marketplace
     let marketplace = Arc::new(signal_platform::SignalMarketplace::new(rpc_url.clone()));
     
-    // Initialize 6 Specialized Provider Agents
-    log::info!("🤖 Initializing 6 Specialized Signal Providers...");
+    // Initialize 6 Specialized Provider Agents with RL integration
+    log::info!("🤖 Initializing 6 Specialized Signal Providers with RL...");
     let providers = specialized_providers::initialize_all_providers(
         marketplace.clone(),
         rpc_url.clone(),
     ).await;
     
-    log::info!("✅ Initialized {} specialized providers", providers.len());
+    // Connect each provider to RL coordinator for centralized learning
+    let mut rl_connected_providers = Vec::new();
+    for provider in providers {
+        let enhanced_provider = provider.with_rl_coordinator(rl_coordinator.clone());
+        rl_connected_providers.push(enhanced_provider);
+    }
+    
+    log::info!("✅ Initialized {} specialized providers with RL integration", rl_connected_providers.len());
     
     // Start each specialized provider in its own task
-    for provider in providers {
+    for provider in rl_connected_providers {
         tokio::spawn(async move {
             provider.run().await;
         });
