@@ -19,11 +19,16 @@ interface MarketData {
   volume: string
 }
 
-export default function Dashboard() {
+interface DashboardProps {
+  systemStats?: any
+}
+
+export default function Dashboard({ systemStats }: DashboardProps) {
   const [performance, setPerformance] = useState<PerformanceData | null>(null)
   const [marketData, setMarketData] = useState<MarketData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [systemHealth, setSystemHealth] = useState<any>(null)
 
   useEffect(() => {
     fetchData()
@@ -37,6 +42,12 @@ export default function Dashboard() {
         axios.get('http://localhost:8080/performance'),
         axios.get('http://localhost:8080/market-data')
       ])
+
+      // Fetch system health from AI Orchestrator
+      try {
+        const systemRes = await axios.post('http://localhost:8081/execute/system', {})
+        setSystemHealth(systemRes.data)
+      } catch {}
 
       if (perfRes.data.success) {
         setPerformance(perfRes.data.data)
