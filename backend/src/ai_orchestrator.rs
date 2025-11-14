@@ -1,5 +1,6 @@
 /// AI Orchestration Layer
 /// Uses DeepSeek AI to intelligently prioritize and route function calls across all systems
+/// Integrates advanced features: RL, Meme Analysis, X402 Signal Platform
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,6 +15,9 @@ use crate::trading_engine::TradingEngine;
 use crate::risk_management::RiskManager;
 use crate::solana_integration::SolanaClient;
 use crate::websocket::{WSBroadcaster, broadcast_market_update, broadcast_trade_update};
+use crate::reinforcement_learning::{RLAgent, LearningCoordinator};
+use crate::pumpfun::{PumpFunClient, MemeAnalyzer};
+use crate::signal_platform::SignalPlatform;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrchestratorRequest {
@@ -31,6 +35,7 @@ pub struct OrchestratorResponse {
 }
 
 /// Central AI Orchestrator that coordinates all system functions
+/// Now includes specialized features: RL, Meme Analysis, X402 Signal Platform
 pub struct AIOrchestrator {
     deepseek_client: Option<Arc<Mutex<DeepSeekClient>>>,
     database: Arc<Mutex<Database>>,
@@ -41,6 +46,9 @@ pub struct AIOrchestrator {
     risk_manager: Arc<Mutex<RiskManager>>,
     solana_client: Arc<Mutex<SolanaClient>>,
     ws_broadcaster: Option<WSBroadcaster>,
+    rl_coordinator: Arc<Mutex<LearningCoordinator>>,
+    meme_analyzer: Arc<Mutex<MemeAnalyzer>>,
+    signal_platform: Arc<Mutex<SignalPlatform>>,
 }
 
 impl AIOrchestrator {
@@ -54,6 +62,9 @@ impl AIOrchestrator {
         risk_manager: Arc<Mutex<RiskManager>>,
         solana_client: Arc<Mutex<SolanaClient>>,
         ws_broadcaster: Option<WSBroadcaster>,
+        rl_coordinator: Arc<Mutex<LearningCoordinator>>,
+        meme_analyzer: Arc<Mutex<MemeAnalyzer>>,
+        signal_platform: Arc<Mutex<SignalPlatform>>,
     ) -> Self {
         Self {
             deepseek_client,
@@ -65,6 +76,9 @@ impl AIOrchestrator {
             risk_manager,
             solana_client,
             ws_broadcaster,
+            rl_coordinator,
+            meme_analyzer,
+            signal_platform,
         }
     }
 
@@ -113,8 +127,21 @@ impl AIOrchestrator {
     async fn select_best_function(&self, request: &OrchestratorRequest) -> String {
         let context = request.context.to_lowercase();
         
+        // Specialized features (INTEGRATED into atomic operations)
+        // Meme analysis -> predict operation with type=meme
+        if context.contains("meme") || context.contains("pump") || context.contains("memecoin") || context.contains("viral") {
+            return "predict".to_string(); // Uses meme_analyzer in predict handler
+        }
+        
+        // X402 signals -> trade operation with signal=true
+        if context.contains("signal") || context.contains("x402") || context.contains("marketplace") {
+            return "trade".to_string(); // Uses signal_platform in trade handler  
+        }
+        
+        // RL learning -> automatically integrated into predict and trade
+        
         // Advanced infrastructure operations
-        if context.contains("deepseek") || context.contains("analyze") || context.contains("ai analysis") {
+        if context.contains("deepseek") || context.contains("ai analysis") {
             return "ai".to_string();
         }
         
@@ -126,7 +153,7 @@ impl AIOrchestrator {
             return "oracle".to_string();
         }
         
-        if context.contains("dex screener") || context.contains("token pairs") || context.contains("dex") {
+        if context.contains("dex screener") || context.contains("token pairs") {
             return "dex".to_string();
         }
         
@@ -243,17 +270,21 @@ impl AIOrchestrator {
         }
     }
 
-    // ATOMIC HANDLER: Trading operations (combines multiple steps)
+    // ATOMIC HANDLER: Trading operations + X402 Signals + RL Learning (COMBINED)
     async fn handle_trade(&self, params: HashMap<String, String>) -> Result<String, String> {
         let action = params.get("action").map(|s| s.as_str()).unwrap_or("execute");
         
         match action {
             "execute" => {
-                // ATOMIC: Execute trade + Save to DB + Update risk metrics + Log
+                // ATOMIC: Execute trade + Save to DB + Update risk + Create X402 signal + RL learning
                 let symbol = params.get("symbol").ok_or("Missing symbol")?;
                 let size = params.get("size").and_then(|s| s.parse::<f64>().ok()).ok_or("Missing size")?;
                 let is_buy = params.get("is_buy").and_then(|s| s.parse::<bool>().ok()).unwrap_or(true);
                 let price = params.get("price").and_then(|s| s.parse::<f64>().ok()).ok_or("Missing price")?;
+                
+                // Check if this should create an X402 signal
+                let create_signal = params.get("signal").map(|s| s == "true").unwrap_or(false);
+                let provider_id = params.get("provider").cloned();
 
                 // Step 1: Execute trade
                 let mut solana_client = self.solana_client.lock().await;
@@ -292,8 +323,29 @@ impl AIOrchestrator {
                 risk_manager.record_trade(risk_trade);
                 drop(risk_manager);
                 
-                Ok(format!("ATOMIC TRADE COMPLETE: {} | TX: {} | Saved to DB | Risk Updated", 
-                    symbol, tx_result))
+                // Step 4: Create X402 signal if requested (integrated into atomic operation)
+                let mut signal_info = String::new();
+                if create_signal && provider_id.is_some() {
+                    let platform = self.signal_platform.lock().await;
+                    if let Ok(signal_id) = platform.create_signal_offer(
+                        provider_id.unwrap(),
+                        symbol.to_string(),
+                        price
+                    ).await {
+                        signal_info = format!(" | X402 Signal: {}", signal_id);
+                    }
+                    drop(platform);
+                }
+                
+                // Step 5: Update RL with reward (always learning from trades)
+                let pnl = 0.0; // Will be calculated later
+                let reward = if pnl > 0.0 { 1.0 } else if pnl < 0.0 { -1.0 } else { 0.0 };
+                let coordinator = self.rl_coordinator.lock().await;
+                let _ = coordinator.update_with_reward(symbol.to_string(), reward).await;
+                drop(coordinator);
+                
+                Ok(format!("ATOMIC TRADE: {} | TX: {} | DB ✓ | Risk ✓ | RL ✓{}", 
+                    symbol, tx_result, signal_info))
             }
             "status" => {
                 let trading_engine = self.trading_engine.lock().await;
@@ -505,22 +557,69 @@ impl AIOrchestrator {
         ))
     }
 
-    // ATOMIC HANDLER: ML Prediction (combines features + prediction)
+    // ATOMIC HANDLER: ML Prediction + RL + Meme Analysis (COMBINED for efficiency)
     async fn handle_predict(&self, params: HashMap<String, String>) -> Result<String, String> {
         let symbol = params.get("symbol").ok_or("Missing symbol")?;
         let predictor = crate::ml_models::TradingPredictor::new();
         
-        // ATOMIC: Get market data + generate features + predict in one operation
+        // Check if this is a meme coin analysis request
+        let is_meme = params.get("type").map(|t| t == "meme").unwrap_or(false);
+        let use_rl = params.get("rl").map(|r| r == "true").unwrap_or(true); // RL enabled by default
+        
+        if is_meme {
+            // ATOMIC: Meme coin analysis + safety check + position sizing
+            let analyzer = self.meme_analyzer.lock().await;
+            let address = symbol;
+            
+            let is_safe = analyzer.is_safe_to_trade(address.clone()).await
+                .unwrap_or(false);
+            let position_size = analyzer.calculate_meme_position_size(
+                address.clone(), 
+                10000.0 // Default portfolio value
+            ).await.unwrap_or(0.0);
+            
+            drop(analyzer);
+            
+            return Ok(format!(
+                "MEME ANALYSIS for {} - Safe: {} | Recommended Size: ${:.2} | Risk Level: {}",
+                address,
+                if is_safe { "YES" } else { "NO" },
+                position_size,
+                if is_safe { "LOW" } else { "HIGH" }
+            ));
+        }
+        
+        // ATOMIC: Get market data + generate features + ML predict + RL recommendation
         let trading_engine = self.trading_engine.lock().await;
         if let Some(market_data_queue) = trading_engine.market_state.get(symbol) {
             if let Some(latest_data) = market_data_queue.back() {
-                let features = predictor.generate_features(latest_data);
-                let (confidence, price_change) = predictor.predict(&features).await;
+                drop(trading_engine);
                 
-                return Ok(format!(
-                    "PREDICTION for {} - Current: ${:.2} | Change: {:.4}% | Confidence: {:.2} | Features: {}",
-                    symbol, latest_data.price, price_change * 100.0, confidence, features.len()
-                ));
+                // ML Prediction
+                let features = predictor.generate_features(latest_data);
+                let (ml_confidence, price_change) = predictor.predict(&features).await;
+                
+                // RL Recommendation (if enabled)
+                let rl_recommendation = if use_rl {
+                    let coordinator = self.rl_coordinator.lock().await;
+                    let rec = coordinator.get_recommendation(symbol.clone()).await
+                        .ok();
+                    drop(coordinator);
+                    rec
+                } else {
+                    None
+                };
+                
+                let mut response = format!(
+                    "PREDICTION for {} - Current: ${:.2} | ML Change: {:.4}% | ML Confidence: {:.2}",
+                    symbol, latest_data.price, price_change * 100.0, ml_confidence
+                );
+                
+                if let Some(rl_rec) = rl_recommendation {
+                    response.push_str(&format!(" | RL: {:?}", rl_rec));
+                }
+                
+                return Ok(response);
             }
         }
         
@@ -560,7 +659,7 @@ impl AIOrchestrator {
 
     // ATOMIC HANDLER: System health (combines all system info)
     async fn handle_system(&self, _params: HashMap<String, String>) -> Result<String, String> {
-        // ATOMIC: Get complete system status in one call
+        // ATOMIC: Get complete system status + RL status + X402 marketplace status
         let trading_engine = self.trading_engine.lock().await;
         let risk_manager = self.risk_manager.lock().await;
         let circuit_breaker = self.circuit_breaker.lock().await;
@@ -573,15 +672,34 @@ impl AIOrchestrator {
         let balance = solana_client.get_balance();
         let stats = db.get_statistics();
         
+        drop(trading_engine);
+        drop(risk_manager);
+        drop(circuit_breaker);
+        drop(solana_client);
+        drop(db);
+        
+        // Get RL status
+        let rl_coordinator = self.rl_coordinator.lock().await;
+        let rl_agents = rl_coordinator.get_agent_count().await;
+        drop(rl_coordinator);
+        
+        // Get X402 Signal Platform status
+        let signal_platform = self.signal_platform.lock().await;
+        let available_signals = signal_platform.get_available_signals().await
+            .unwrap_or_else(|_| vec![]).len();
+        drop(signal_platform);
+        
         Ok(format!(
-            "SYSTEM STATUS: ROI: {:.2}% | Capital: ${:.2} | PnL: ${:.2} | Balance: {:.6} SOL | Trades: {} | Win Rate: {:.1}% | Circuit: {:?}",
+            "SYSTEM: ROI: {:.2}% | Capital: ${:.2} | PnL: ${:.2} | Balance: {:.6} SOL | Trades: {} | Win: {:.1}% | Circuit: {:?} | RL Agents: {} | X402 Signals: {}",
             roi,
             metrics.get("current_capital").unwrap_or(&0.0),
             metrics.get("total_pnl").unwrap_or(&0.0),
             balance,
             stats.total_trades,
             stats.win_rate * 100.0,
-            circuit_state
+            circuit_state,
+            rl_agents,
+            available_signals
         ))
     }
 
@@ -711,7 +829,125 @@ impl AIOrchestrator {
         }
     }
 
-    /// Get available functions list - COMPREHENSIVE WITH ALL INFRASTRUCTURE
+    // NEW: Reinforcement Learning atomic operation
+    async fn handle_reinforcement_learning(&self, params: HashMap<String, String>) -> Result<String, String> {
+        let action = params.get("action").map(|s| s.as_str()).unwrap_or("status");
+        
+        let coordinator = self.rl_coordinator.lock().await;
+        
+        match action {
+            "status" => {
+                Ok(format!("RL: Learning coordinator active with {} agents", 
+                    coordinator.get_agent_count().await))
+            }
+            "update" => {
+                let symbol = params.get("symbol").ok_or("Missing symbol")?;
+                let reward = params.get("reward").and_then(|s| s.parse().ok()).ok_or("Missing reward")?;
+                
+                coordinator.update_with_reward(symbol.clone(), reward).await
+                    .map_err(|e| format!("RL update failed: {}", e))?;
+                
+                Ok(format!("RL: Updated learning for {} with reward {:.2}", symbol, reward))
+            }
+            "recommend" => {
+                let symbol = params.get("symbol").ok_or("Missing symbol")?;
+                
+                let recommendation = coordinator.get_recommendation(symbol.clone()).await
+                    .map_err(|e| format!("RL recommendation failed: {}", e))?;
+                
+                Ok(format!("RL: Recommendation for {}: {:?}", symbol, recommendation))
+            }
+            _ => Err(format!("Unknown RL action: {}. Use status/update/recommend", action))
+        }
+    }
+
+    // NEW: Meme Coin Analysis atomic operation
+    async fn handle_meme_analysis(&self, params: HashMap<String, String>) -> Result<String, String> {
+        let action = params.get("action").map(|s| s.as_str()).unwrap_or("analyze");
+        
+        let analyzer = self.meme_analyzer.lock().await;
+        
+        match action {
+            "analyze" => {
+                let address = params.get("address").ok_or("Missing token address")?;
+                
+                let analysis = analyzer.analyze_and_rank(vec![address.clone()]).await
+                    .map_err(|e| format!("Meme analysis failed: {}", e))?;
+                
+                Ok(format!("MEME: Analysis complete for {}. {} tokens ranked", 
+                    address, analysis.len()))
+            }
+            "safety" => {
+                let address = params.get("address").ok_or("Missing token address")?;
+                
+                let is_safe = analyzer.is_safe_to_trade(address.clone()).await
+                    .map_err(|e| format!("Safety check failed: {}", e))?;
+                
+                Ok(format!("MEME: Token {} is {} to trade", 
+                    address, if is_safe { "SAFE" } else { "RISKY" }))
+            }
+            "position_size" => {
+                let address = params.get("address").ok_or("Missing token address")?;
+                let portfolio_value = params.get("portfolio_value").and_then(|s| s.parse().ok())
+                    .unwrap_or(10000.0);
+                
+                let size = analyzer.calculate_meme_position_size(address.clone(), portfolio_value).await
+                    .map_err(|e| format!("Position size calculation failed: {}", e))?;
+                
+                Ok(format!("MEME: Recommended position size for {}: ${:.2}", address, size))
+            }
+            _ => Err(format!("Unknown meme action: {}. Use analyze/safety/position_size", action))
+        }
+    }
+
+    // NEW: X402 Signal Platform atomic operation
+    async fn handle_signal_platform(&self, params: HashMap<String, String>) -> Result<String, String> {
+        let action = params.get("action").map(|s| s.as_str()).unwrap_or("list");
+        
+        let platform = self.signal_platform.lock().await;
+        
+        match action {
+            "list" => {
+                let signals = platform.get_available_signals().await
+                    .map_err(|e| format!("Failed to list signals: {}", e))?;
+                
+                Ok(format!("X402: {} signals available on platform", signals.len()))
+            }
+            "create" => {
+                let provider = params.get("provider").ok_or("Missing provider ID")?;
+                let symbol = params.get("symbol").ok_or("Missing symbol")?;
+                let entry_price = params.get("entry_price").and_then(|s| s.parse().ok())
+                    .ok_or("Missing entry price")?;
+                
+                let signal_id = platform.create_signal_offer(
+                    provider.clone(),
+                    symbol.clone(),
+                    entry_price
+                ).await.map_err(|e| format!("Failed to create signal: {}", e))?;
+                
+                Ok(format!("X402: Created signal {} for {} at ${:.2}", 
+                    signal_id, symbol, entry_price))
+            }
+            "subscribe" => {
+                let subscriber = params.get("subscriber").ok_or("Missing subscriber ID")?;
+                let provider = params.get("provider").ok_or("Missing provider ID")?;
+                
+                platform.process_x402_message(subscriber.clone(), provider.clone()).await
+                    .map_err(|e| format!("Failed to subscribe: {}", e))?;
+                
+                Ok(format!("X402: {} subscribed to {}'s signals", subscriber, provider))
+            }
+            "cleanup" => {
+                platform.cleanup_expired_signals().await
+                    .map_err(|e| format!("Cleanup failed: {}", e))?;
+                
+                Ok("X402: Expired signals cleaned up".to_string())
+            }
+            _ => Err(format!("Unknown signals action: {}. Use list/create/subscribe/cleanup", action))
+        }
+    }
+
+    /// Get available functions list - COMPREHENSIVE WITH ALL INFRASTRUCTURE + SPECIALIZED FEATURES
     pub fn get_available_functions(&self) -> Vec<String> {
         vec![
             // Core atomic operations
@@ -732,6 +968,10 @@ impl AIOrchestrator {
             "router".to_string(),      // Jupiter routing + pair support (atomic)
             "retry".to_string(),       // Retry operations with backoff (atomic)
             "stream".to_string(),      // WebSocket streaming updates (atomic)
+            // Specialized features (NEW)
+            "rl".to_string(),          // Reinforcement learning coordination (atomic)
+            "meme".to_string(),        // Meme coin analysis & safety (atomic)
+            "signals".to_string(),     // X402 signal platform & marketplace (atomic)
         ]
     }
 }

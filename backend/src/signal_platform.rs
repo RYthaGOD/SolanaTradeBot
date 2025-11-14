@@ -1,3 +1,6 @@
+//! X402 Signal Platform - Protocol for trading signal marketplace
+//! Integrated into AI orchestrator for signal sharing and monetization
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
