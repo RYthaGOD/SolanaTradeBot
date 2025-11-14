@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
 
-use crate::ai_orchestrator::{AIOrchestrator, OrchestratorRequest, OrchestratorResponse};
+use crate::ai_orchestrator::{AIOrchestrator, OrchestratorRequest};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ApiResponse<T> {
