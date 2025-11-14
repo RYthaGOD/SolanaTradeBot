@@ -26,6 +26,8 @@ mod pda;
 mod rpc_client;
 mod quant_analysis;
 mod jito_bam;
+mod ai_orchestrator;
+mod api_v2;
 
 #[cfg(test)]
 mod algorithm_tests;
@@ -45,18 +47,18 @@ async fn main() {
     
     // Initialize Database for persistence
     log::info!("💾 Initializing Database...");
-    let _database = Arc::new(Mutex::new(database::Database::new("trades.db")));
+    let database = Arc::new(Mutex::new(database::Database::new("trades.db")));
     
     // Initialize Key Manager for secure wallet operations
     log::info!("🔐 Initializing Key Manager...");
-    let _key_manager = Arc::new(Mutex::new(key_manager::KeyManager::new(false))); // encryption disabled for dev
+    let key_manager = Arc::new(Mutex::new(key_manager::KeyManager::new(false))); // encryption disabled for dev
     
     // Initialize Security Rate Limiter
     log::info!("🛡️ Initializing Security Rate Limiter...");
-    let _rate_limiter = Arc::new(Mutex::new(security::RateLimiter::new(100, std::time::Duration::from_secs(60))));
+    let rate_limiter = Arc::new(Mutex::new(security::RateLimiter::new(100, std::time::Duration::from_secs(60))));
     
     // Initialize DeepSeek AI Client (if API key is set)
-    let _deepseek_client = if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
+    let deepseek_client = if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
         log::info!("🧠 Initializing DeepSeek AI Client...");
         Some(Arc::new(Mutex::new(deepseek_ai::DeepSeekClient::new(api_key))))
     } else {
@@ -66,7 +68,7 @@ async fn main() {
     
     // Initialize Error Handling Circuit Breaker
     log::info!("⚡ Initializing Circuit Breaker...");
-    let _circuit_breaker = Arc::new(Mutex::new(
+    let circuit_breaker = Arc::new(Mutex::new(
         error_handling::CircuitBreaker::new(5, 3, std::time::Duration::from_secs(60))
     ));
     
@@ -79,6 +81,20 @@ async fn main() {
     
     // Use new_default for trading engine (includes built-in risk manager)
     let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new(risk_manager.clone())));
+
+    // Initialize AI Orchestrator that coordinates all systems with DeepSeek intelligence
+    log::info!("🤖 Initializing AI Orchestrator...");
+    let ai_orchestrator = Arc::new(ai_orchestrator::AIOrchestrator::new(
+        deepseek_client.clone(),
+        database.clone(),
+        rate_limiter.clone(),
+        key_manager.clone(),
+        circuit_breaker.clone(),
+        trading_engine.clone(),
+        risk_manager.clone(),
+        solana_client.clone(),
+    ));
+    log::info!("✅ AI Orchestrator ready with {} available functions", ai_orchestrator.get_available_functions().len());
 
     // Start market data simulation
     let market_engine = trading_engine.clone();
@@ -127,9 +143,24 @@ async fn main() {
         agent.run().await;
     });
 
+    // Start both APIs in parallel
     let api_engine = trading_engine.clone();
     let api_risk = risk_manager.clone();
     let api_solana = solana_client.clone();
-    log::info!("🌐 Starting Web API on port 8080...");
-    api::start_server(api_engine, api_risk, api_solana).await;
+    let api_orchestrator = ai_orchestrator.clone();
+    
+    log::info!("🌐 Starting Legacy API on port 8080 and AI-Orchestrated API v2 on port 8081...");
+    
+    // Start legacy API in background
+    let legacy_api = tokio::spawn(async move {
+        api::start_server(api_engine, api_risk, api_solana).await;
+    });
+    
+    // Start new AI-orchestrated API v2 in background
+    let ai_api = tokio::spawn(async move {
+        api_v2::start_server(api_orchestrator).await;
+    });
+    
+    // Wait for both servers (they run forever)
+    let _ = tokio::try_join!(legacy_api, ai_api);
 }
