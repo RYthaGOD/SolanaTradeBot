@@ -13,6 +13,7 @@ use crate::error_handling::CircuitBreaker;
 use crate::trading_engine::TradingEngine;
 use crate::risk_management::RiskManager;
 use crate::solana_integration::SolanaClient;
+use crate::websocket::{WSBroadcaster, broadcast_market_update, broadcast_trade_update};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrchestratorRequest {
@@ -39,6 +40,7 @@ pub struct AIOrchestrator {
     trading_engine: Arc<Mutex<TradingEngine>>,
     risk_manager: Arc<Mutex<RiskManager>>,
     solana_client: Arc<Mutex<SolanaClient>>,
+    ws_broadcaster: Option<WSBroadcaster>,
 }
 
 impl AIOrchestrator {
@@ -51,6 +53,7 @@ impl AIOrchestrator {
         trading_engine: Arc<Mutex<TradingEngine>>,
         risk_manager: Arc<Mutex<RiskManager>>,
         solana_client: Arc<Mutex<SolanaClient>>,
+        ws_broadcaster: Option<WSBroadcaster>,
     ) -> Self {
         Self {
             deepseek_client,
@@ -61,6 +64,7 @@ impl AIOrchestrator {
             trading_engine,
             risk_manager,
             solana_client,
+            ws_broadcaster,
         }
     }
 
@@ -132,6 +136,10 @@ impl AIOrchestrator {
         
         if context.contains("retry") || context.contains("backoff") {
             return "retry".to_string();
+        }
+        
+        if context.contains("stream") || context.contains("websocket") || context.contains("broadcast") || context.contains("real-time") {
+            return "stream".to_string();
         }
         
         // Core atomic function selection
@@ -229,8 +237,9 @@ impl AIOrchestrator {
             "dex" => self.handle_dex_screener(parameters).await,
             "router" => self.handle_router(parameters).await,
             "retry" => self.handle_retry_operation(parameters).await,
+            "stream" => self.handle_websocket_stream(parameters).await,
             
-            _ => Err(format!("Unknown function: {}. Available: trade, portfolio, risk, database, wallet, fees, predict, validate, system, ai, circuit, oracle, dex, router, retry", function_name)),
+            _ => Err(format!("Unknown function: {}. Available: trade, portfolio, risk, database, wallet, fees, predict, validate, system, ai, circuit, oracle, dex, router, retry, stream", function_name)),
         }
     }
 
@@ -615,6 +624,42 @@ impl AIOrchestrator {
         ))
     }
 
+    // ATOMIC HANDLER: WebSocket Streaming (uses broadcast functions)
+    async fn handle_websocket_stream(&self, params: HashMap<String, String>) -> Result<String, String> {
+        if let Some(broadcaster) = &self.ws_broadcaster {
+            let update_type = params.get("type").map(|s| s.as_str()).unwrap_or("market");
+            
+            match update_type {
+                "market" => {
+                    let symbol = params.get("symbol").unwrap_or(&"SOL".to_string()).clone();
+                    let price = params.get("price").and_then(|s| s.parse().ok()).unwrap_or(100.0);
+                    let volume = params.get("volume").and_then(|s| s.parse().ok()).unwrap_or(1000.0);
+                    let change = params.get("change").and_then(|s| s.parse().ok()).unwrap_or(0.0);
+                    
+                    // Use broadcast_market_update (previously unused)
+                    broadcast_market_update(broadcaster, symbol.clone(), price, volume, change);
+                    
+                    Ok(format!("STREAM: Broadcast market update for {} at ${:.2}", symbol, price))
+                }
+                "trade" => {
+                    let id = params.get("id").unwrap_or(&"trade_1".to_string()).clone();
+                    let symbol = params.get("symbol").unwrap_or(&"SOL".to_string()).clone();
+                    let action = params.get("action").unwrap_or(&"buy".to_string()).clone();
+                    let price = params.get("price").and_then(|s| s.parse().ok()).unwrap_or(100.0);
+                    let size = params.get("size").and_then(|s| s.parse().ok()).unwrap_or(1.0);
+                    
+                    // Use broadcast_trade_update (previously unused)
+                    broadcast_trade_update(broadcaster, id.clone(), symbol.clone(), action, price, size);
+                    
+                    Ok(format!("STREAM: Broadcast trade update {} for {}", id, symbol))
+                }
+                _ => Err(format!("Unknown stream type: {}. Use 'market' or 'trade'", update_type))
+            }
+        } else {
+            Err("WebSocket broadcaster not initialized".to_string())
+        }
+    }
+
     /// Get available functions list - COMPREHENSIVE WITH ALL INFRASTRUCTURE
     pub fn get_available_functions(&self) -> Vec<String> {
         vec![
@@ -635,6 +680,7 @@ impl AIOrchestrator {
             "dex".to_string(),         // DEX Screener token pairs + details (atomic)
             "router".to_string(),      // Jupiter routing + pair support (atomic)
             "retry".to_string(),       // Retry operations with backoff (atomic)
+            "stream".to_string(),      // WebSocket streaming updates (atomic)
         ]
     }
 }

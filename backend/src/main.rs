@@ -82,6 +82,10 @@ async fn main() {
     // Use new_default for trading engine (includes built-in risk manager)
     let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new(risk_manager.clone())));
 
+    // Initialize WebSocket broadcaster for real-time updates
+    log::info!("📡 Initializing WebSocket broadcaster...");
+    let ws_broadcaster = websocket::create_ws_broadcaster();
+    
     // Initialize AI Orchestrator that coordinates all systems with DeepSeek intelligence
     log::info!("🤖 Initializing AI Orchestrator...");
     let ai_orchestrator = Arc::new(ai_orchestrator::AIOrchestrator::new(
@@ -93,6 +97,7 @@ async fn main() {
         trading_engine.clone(),
         risk_manager.clone(),
         solana_client.clone(),
+        Some(ws_broadcaster.clone()),
     ));
     log::info!("✅ AI Orchestrator ready with {} available functions", ai_orchestrator.get_available_functions().len());
 
