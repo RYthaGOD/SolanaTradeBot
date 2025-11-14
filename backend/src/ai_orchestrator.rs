@@ -266,7 +266,12 @@ impl AIOrchestrator {
             "retry" => self.handle_retry_operation(parameters).await,
             "stream" => self.handle_websocket_stream(parameters).await,
             
-            _ => Err(format!("Unknown function: {}. Available: trade, portfolio, risk, database, wallet, fees, predict, validate, system, ai, circuit, oracle, dex, router, retry, stream", function_name)),
+            // NEW: Direct access to specialized feature handlers (now public)
+            "rl" => self.handle_reinforcement_learning(parameters).await,
+            "meme" => self.handle_meme_analysis(parameters).await,
+            "signals" => self.handle_signal_platform(parameters).await,
+            
+            _ => Err(format!("Unknown function: {}. Available: trade, portfolio, risk, database, wallet, fees, predict, validate, system, ai, circuit, oracle, dex, router, retry, stream, rl, meme, signals", function_name)),
         }
     }
 
@@ -823,8 +828,8 @@ impl AIOrchestrator {
         }
     }
 
-    // NEW: Reinforcement Learning atomic operation
-    async fn handle_reinforcement_learning(&self, params: HashMap<String, String>) -> Result<String, String> {
+    // NEW: Reinforcement Learning atomic operation - Direct access to RL coordinator
+    pub async fn handle_reinforcement_learning(&self, params: HashMap<String, String>) -> Result<String, String> {
         let action = params.get("action").map(|s| s.as_str()).unwrap_or("status");
         
         let coordinator = self.rl_coordinator.lock().await;
@@ -849,8 +854,8 @@ impl AIOrchestrator {
         }
     }
 
-    // NEW: Meme Coin Analysis atomic operation
-    async fn handle_meme_analysis(&self, params: HashMap<String, String>) -> Result<String, String> {
+    // NEW: Meme Coin Analysis atomic operation - Direct access to meme analyzer
+    pub async fn handle_meme_analysis(&self, params: HashMap<String, String>) -> Result<String, String> {
         let action = params.get("action").map(|s| s.as_str()).unwrap_or("analyze");
         
         let analyzer = self.meme_analyzer.lock().await;
@@ -880,8 +885,8 @@ impl AIOrchestrator {
         }
     }
 
-    // NEW: X402 Signal Platform atomic operation
-    async fn handle_signal_platform(&self, params: HashMap<String, String>) -> Result<String, String> {
+    // NEW: X402 Signal Platform atomic operation - Direct access to signal marketplace
+    pub async fn handle_signal_platform(&self, params: HashMap<String, String>) -> Result<String, String> {
         let action = params.get("action").map(|s| s.as_str()).unwrap_or("list");
         
         let platform = self.signal_platform.lock().await;
