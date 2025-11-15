@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 
 interface Signal {
   id: string
@@ -25,13 +25,15 @@ export default function X402Marketplace() {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchMarketplaceData = async () => {
-    try {
-      const response = await axios.post('http://localhost:8081/execute/signals', {
-        action: 'list'
-      })
-      // Parse signals from response
-      setSignals([
+    const fetchMarketplaceData = async () => {
+      try {
+        await httpJson('http://localhost:8081/execute/signals', {
+          method: 'POST',
+          data: {
+            action: 'list'
+          }
+        })
+        setSignals([
         {
           id: 'sig_001',
           provider: 'memecoin_monitor',
@@ -76,8 +78,8 @@ export default function X402Marketplace() {
         { id: 'master_analyzer', name: 'Master Analyzer', signals: 67, win_rate: 0.761, earnings: 4120.90 },
       ])
       
-      setLoading(false)
-    } catch (error) {
+        setLoading(false)
+      } catch (error) {
       console.error('Failed to fetch marketplace data:', error)
       setLoading(false)
     }

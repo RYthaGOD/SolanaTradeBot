@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 
 interface MemeToken {
   symbol: string
@@ -98,24 +98,27 @@ export default function MemeAnalyzer() {
     }
   }
 
-  const analyzeMeme = async () => {
-    if (!searchSymbol.trim()) return
-    
-    setAnalyzing(true)
-    setAnalysisResult(null)
-    
-    try {
-      const response = await axios.post('http://localhost:8081/execute/predict', {
-        symbol: searchSymbol,
-        type: 'meme'
-      })
-      setAnalysisResult(response.data)
-    } catch (error: any) {
-      setAnalysisResult({ error: error.message })
-    } finally {
-      setAnalyzing(false)
+    const analyzeMeme = async () => {
+      if (!searchSymbol.trim()) return
+      
+      setAnalyzing(true)
+      setAnalysisResult(null)
+      
+      try {
+        const response = await httpJson<any>('http://localhost:8081/execute/predict', {
+          method: 'POST',
+          data: {
+            symbol: searchSymbol,
+            type: 'meme'
+          }
+        })
+        setAnalysisResult(response)
+      } catch (error: any) {
+        setAnalysisResult({ error: error.message })
+      } finally {
+        setAnalyzing(false)
+      }
     }
-  }
 
   const getRiskColor = (risk: string) => {
     if (risk === 'LOW') return '#00ff88'

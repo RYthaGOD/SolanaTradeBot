@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react'
-import Dashboard from './components/Dashboard'
-import TradingView from './components/TradingView'
-import Portfolio from './components/Portfolio'
-import Performance from './components/Performance'
-import AIOrchestrator from './components/AIOrchestrator'
-import RLAgents from './components/RLAgents'
-import X402Marketplace from './components/X402Marketplace'
-import MemeAnalyzer from './components/MemeAnalyzer'
-import axios from 'axios'
+import { useState, useEffect, lazy, Suspense } from 'react'
+import { httpJson } from './utils/http'
+
+const Dashboard = lazy(() => import('./components/Dashboard'))
+const TradingView = lazy(() => import('./components/TradingView'))
+const Portfolio = lazy(() => import('./components/Portfolio'))
+const Performance = lazy(() => import('./components/Performance'))
+const AIOrchestrator = lazy(() => import('./components/AIOrchestrator'))
+const RLAgents = lazy(() => import('./components/RLAgents'))
+const X402Marketplace = lazy(() => import('./components/X402Marketplace'))
+const MemeAnalyzer = lazy(() => import('./components/MemeAnalyzer'))
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -16,27 +17,33 @@ function App() {
   const [systemStats, setSystemStats] = useState<any>(null)
 
   useEffect(() => {
+    let isMounted = true
+
     const checkConnection = async () => {
-      try {
-        // Check legacy API
-        const response = await axios.get('http://localhost:8080/health', { timeout: 2000 })
-        setIsConnected(response.data.success)
-        
-        // Check new AI Orchestrator API
-        const v2Response = await axios.get('http://localhost:8081/health', { timeout: 2000 })
-        setApiV2Connected(v2Response.status === 200)
-      } catch {
-        setIsConnected(false)
-        setApiV2Connected(false)
-      }
+      const [legacy, v2] = await Promise.allSettled([
+        httpJson<{ success?: boolean }>('http://localhost:8080/health', { timeoutMs: 2000 }),
+        httpJson<Record<string, unknown>>('http://localhost:8081/health', { timeoutMs: 2000 })
+      ])
+
+      if (!isMounted) return
+
+      setIsConnected(legacy.status === 'fulfilled' ? Boolean(legacy.value?.success) : false)
+      setApiV2Connected(v2.status === 'fulfilled')
     }
     
     const fetchSystemStats = async () => {
       try {
-        const response = await axios.post('http://localhost:8081/execute/system', {})
-        setSystemStats(response.data)
-      } catch (error) {
-        console.log('System stats not available')
+        const response = await httpJson<any>('http://localhost:8081/execute/system', {
+          method: 'POST',
+          data: {}
+        })
+        if (isMounted) {
+          setSystemStats(response)
+        }
+      } catch {
+        if (isMounted) {
+          console.log('System stats not available')
+        }
       }
     }
     
@@ -46,7 +53,10 @@ function App() {
       checkConnection()
       fetchSystemStats()
     }, 10000)
-    return () => clearInterval(interval)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
   }, [])
 
   const tabs = [
@@ -116,17 +126,19 @@ function App() {
         ))}
       </nav>
 
-      <main className="main-content modern">
-        <div className="content-wrapper fade-in">
-          {activeTab === 'dashboard' && <Dashboard systemStats={systemStats} />}
-          {activeTab === 'ai' && <AIOrchestrator />}
-          {activeTab === 'rl' && <RLAgents />}
-          {activeTab === 'trading' && <TradingView />}
-          {activeTab === 'portfolio' && <Portfolio />}
-          {activeTab === 'performance' && <Performance />}
-          {activeTab === 'x402' && <X402Marketplace />}
-          {activeTab === 'meme' && <MemeAnalyzer />}
-        </div>
+        <main className="main-content modern">
+          <div className="content-wrapper fade-in">
+            <Suspense fallback={<div className="loading">Loading module...</div>}>
+              {activeTab === 'dashboard' && <Dashboard />}
+              {activeTab === 'ai' && <AIOrchestrator />}
+              {activeTab === 'rl' && <RLAgents />}
+              {activeTab === 'trading' && <TradingView />}
+              {activeTab === 'portfolio' && <Portfolio />}
+              {activeTab === 'performance' && <Performance />}
+              {activeTab === 'x402' && <X402Marketplace />}
+              {activeTab === 'meme' && <MemeAnalyzer />}
+            </Suspense>
+          </div>
       </main>
 
       <footer className="footer modern">

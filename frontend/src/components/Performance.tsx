@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
 
 interface PerformanceMetrics {
@@ -24,19 +24,19 @@ export default function Performance() {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchPerformance = async () => {
-    try {
-      const response = await axios.get('http://localhost:8080/performance')
-      if (response.data.success) {
-        setMetrics(response.data.data)
+    const fetchPerformance = async () => {
+      try {
+        const response = await httpJson<{ success: boolean; data: PerformanceMetrics }>('http://localhost:8080/performance')
+        if (response.success) {
+          setMetrics(response.data)
+        }
+        setLoading(false)
+        setError('')
+      } catch {
+        setError('Failed to fetch performance data')
+        setLoading(false)
       }
-      setLoading(false)
-      setError('')
-    } catch (err) {
-      setError('Failed to fetch performance data')
-      setLoading(false)
     }
-  }
 
   if (loading) {
     return <div className="loading">Loading performance metrics...</div>
