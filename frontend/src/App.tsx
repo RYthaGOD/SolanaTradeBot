@@ -1,5 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react'
 import { httpJson } from './utils/http'
+import LandingPage from './components/LandingPage'
 
 const Dashboard = lazy(() => import('./components/Dashboard'))
 const TradingView = lazy(() => import('./components/TradingView'))
@@ -10,13 +11,18 @@ const RLAgents = lazy(() => import('./components/RLAgents'))
 const X402Marketplace = lazy(() => import('./components/X402Marketplace'))
 const MemeAnalyzer = lazy(() => import('./components/MemeAnalyzer'))
 
+type ViewMode = 'landing' | 'console'
+
 function App() {
+  const [viewMode, setViewMode] = useState<ViewMode>('landing')
   const [activeTab, setActiveTab] = useState('dashboard')
   const [isConnected, setIsConnected] = useState(false)
   const [apiV2Connected, setApiV2Connected] = useState(false)
   const [systemStats, setSystemStats] = useState<any>(null)
 
   useEffect(() => {
+    if (viewMode !== 'console') return
+
     let isMounted = true
 
     const checkConnection = async () => {
@@ -57,7 +63,7 @@ function App() {
       isMounted = false
       clearInterval(interval)
     }
-  }, [])
+  }, [viewMode])
 
   const tabs = [
     { id: 'dashboard', icon: '📊', name: 'Dashboard', color: '#00d4ff' },
@@ -70,9 +76,17 @@ function App() {
     { id: 'meme', icon: '🎪', name: 'Meme Coins', color: '#ff0099' },
   ]
 
+  if (viewMode === 'landing') {
+    return (
+      <div className="app-shell landing-shell">
+        <LandingPage onEnter={() => setViewMode('console')} />
+      </div>
+    )
+  }
+
   return (
-    <div className="app">
-      <header className="header">
+    <div className="app-shell">
+      <header className="header glass">
         <div className="header-content">
           <div className="brand">
             <h1 className="glow">⚡ SolanaTradeBot</h1>
@@ -96,16 +110,19 @@ function App() {
             </div>
           </div>
           
-          <div className="connection-panel">
-            <div className={`connection-status ${isConnected ? 'connected' : 'offline'}`}>
-              <div className={`status-dot ${isConnected ? 'connected' : 'offline'}`}></div>
-              <span>{isConnected ? 'API v1' : 'Offline'}</span>
+            <div className="connection-panel">
+              <div className={`connection-status ${isConnected ? 'connected' : 'offline'}`}>
+                <div className={`status-dot ${isConnected ? 'connected' : 'offline'}`}></div>
+                <span>{isConnected ? 'API v1' : 'Offline'}</span>
+              </div>
+              <div className={`connection-status ${apiV2Connected ? 'connected' : 'offline'}`}>
+                <div className={`status-dot ${apiV2Connected ? 'connected' : 'offline'}`}></div>
+                <span>{apiV2Connected ? 'AI API v2' : 'Offline'}</span>
+              </div>
+              <button className="btn ghost small" onClick={() => setViewMode('landing')}>
+                Docs Portal ↗
+              </button>
             </div>
-            <div className={`connection-status ${apiV2Connected ? 'connected' : 'offline'}`}>
-              <div className={`status-dot ${apiV2Connected ? 'connected' : 'offline'}`}></div>
-              <span>{apiV2Connected ? 'AI API v2' : 'Offline'}</span>
-            </div>
-          </div>
         </div>
       </header>
 
@@ -126,22 +143,22 @@ function App() {
         ))}
       </nav>
 
-        <main className="main-content modern">
-          <div className="content-wrapper fade-in">
-            <Suspense fallback={<div className="loading">Loading module...</div>}>
-              {activeTab === 'dashboard' && <Dashboard />}
-              {activeTab === 'ai' && <AIOrchestrator />}
-              {activeTab === 'rl' && <RLAgents />}
-              {activeTab === 'trading' && <TradingView />}
-              {activeTab === 'portfolio' && <Portfolio />}
-              {activeTab === 'performance' && <Performance />}
-              {activeTab === 'x402' && <X402Marketplace />}
-              {activeTab === 'meme' && <MemeAnalyzer />}
-            </Suspense>
-          </div>
+      <main className="main-content glass">
+        <div className="content-wrapper fade-in">
+          <Suspense fallback={<div className="loading">Loading module...</div>}>
+            {activeTab === 'dashboard' && <Dashboard />}
+            {activeTab === 'ai' && <AIOrchestrator />}
+            {activeTab === 'rl' && <RLAgents />}
+            {activeTab === 'trading' && <TradingView />}
+            {activeTab === 'portfolio' && <Portfolio />}
+            {activeTab === 'performance' && <Performance />}
+            {activeTab === 'x402' && <X402Marketplace />}
+            {activeTab === 'meme' && <MemeAnalyzer />}
+          </Suspense>
+        </div>
       </main>
 
-      <footer className="footer modern">
+      <footer className="footer glass">
         <div className="footer-content">
           <div className="footer-section">
             <span className="footer-label">Integrations:</span>
