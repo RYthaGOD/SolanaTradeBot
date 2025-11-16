@@ -387,6 +387,12 @@ impl SignalMarketplace {
             .collect()
     }
 
+    /// Retrieve all provider stats for telemetry dashboards
+    pub async fn get_all_provider_stats(&self) -> Vec<SignalProvider> {
+        let providers = self.providers.lock().await;
+        providers.values().cloned().collect()
+    }
+
     /// Get signals by symbol
     pub async fn get_signals_by_symbol(&self, symbol: &str) -> Vec<TradingSignalData> {
         let signals = self.signals.lock().await;

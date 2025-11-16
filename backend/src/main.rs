@@ -13,6 +13,7 @@ mod jito_bam;
 mod jupiter_integration;
 mod key_manager;
 mod ml_models;
+mod moralis;
 mod pda;
 mod pumpfun;
 mod quant_analysis;
