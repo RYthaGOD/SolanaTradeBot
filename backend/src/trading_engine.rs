@@ -183,6 +183,7 @@ pub async fn generate_trading_signals(
     _solana_rpc: Arc<Mutex<super::solana_rpc::SolanaRpcClient>>,
     _jupiter_client: Arc<Mutex<super::jupiter_integration::JupiterClient>>,
     _dex_executor: Arc<Mutex<super::dex_executor::DexExecutor>>,
+    _market_data: Arc<super::market_data::MarketDataProvider>,
     alert_manager: Arc<super::monitoring::AlertManager>,
 ) {
     log::info!("🤖 Starting trading signal generation and execution");

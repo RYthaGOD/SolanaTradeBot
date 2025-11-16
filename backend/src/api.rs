@@ -28,11 +28,13 @@ pub async fn start_server(
     _solana_rpc: Arc<Mutex<super::solana_rpc::SolanaRpcClient>>,
     _jupiter_client: Arc<Mutex<super::jupiter_integration::JupiterClient>>,
     _dex_executor: Arc<Mutex<super::dex_executor::DexExecutor>>,
+    market_data: Arc<super::market_data::MarketDataProvider>,
     config: super::config::ApiConfig,
 ) {
     log::info!("🌐 Starting Warp server on {}:{}", config.host, config.port);
     log::info!("🔷 Jupiter Aggregator integration active");
     log::info!("🔷 Phase 2 DEX Executor ready for devnet testing");
+    log::info!("📊 Phase 3 Market Data Provider with Pyth Network active");
     
     let cors = warp::cors()
         .allow_any_origin()
@@ -170,7 +172,44 @@ pub async fn start_server(
             })
     };
     
+    // Phase 3: Real-time prices endpoint
+    let market_data_provider = market_data.clone();
+    let prices_route = warp::path("prices")
+        .and(warp::get())
+        .and_then(move || {
+            let provider = market_data_provider.clone();
+            async move {
+                match provider.get_prices(&["SOL/USD", "BTC/USD", "ETH/USD", "USDC/USD"]).await {
+                    Ok(prices) => {
+                        let price_data: Vec<serde_json::Value> = prices.iter().map(|p| {
+                            serde_json::json!({
+                                "symbol": p.symbol,
+                                "price": format!("{:.2}", p.price),
+                                "confidence": format!("{:.4}", p.confidence),
+                                "timestamp": p.timestamp,
+                                "source": format!("{:?}", p.source),
+                            })
+                        }).collect();
+                        
+                        Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse {
+                            success: true,
+                            data: serde_json::json!(price_data),
+                            message: "Real-time prices from Pyth Network".to_string(),
+                        }))
+                    }
+                    Err(e) => {
+                        Ok(warp::reply::json(&ApiResponse {
+                            success: false,
+                            data: serde_json::json!(null),
+                            message: format!("Failed to fetch prices: {}", e),
+                        }))
+                    }
+                }
+            }
+        });
+    
     let routes = health
+        .or(prices_route)
         .or(portfolio_route)
         .or(performance_route)
         .or(market_data_route)

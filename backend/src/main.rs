@@ -9,6 +9,7 @@ mod monitoring;
 mod solana_rpc;
 mod jupiter_integration;
 mod dex_executor;
+mod market_data;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -127,6 +128,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     log::info!("🔷 DEX Executor initialized (real trading: {})", config.trading.enable_trading);
     
+    // Initialize Market Data Provider (Phase 3)
+    let market_data_provider = Arc::new(market_data::MarketDataProvider::new(
+        solana_rpc.clone(),
+        !config.trading.enable_paper_trading, // Enable real data if not paper trading
+    ));
+    
+    log::info!("📊 Market Data Provider initialized");
+    
+    // Start price feed manager for continuous updates
+    let price_feed_manager = market_data::PriceFeedManager::new(
+        market_data_provider.clone(),
+        vec![
+            "SOL/USD".to_string(),
+            "BTC/USD".to_string(),
+            "ETH/USD".to_string(),
+            "USDC/USD".to_string(),
+        ],
+        5, // Update every 5 seconds
+    );
+    
+    tokio::spawn(async move {
+        price_feed_manager.start().await;
+    });
+    
+    log::info!("📊 Price feed manager started with 5s update interval");
+    
     // Create legacy solana client wrapper for backward compatibility
     let mut rpc_urls_legacy = vec![config.solana.rpc_url.clone()];
     rpc_urls_legacy.extend(config.solana.rpc_fallbacks.clone());
@@ -162,6 +189,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let signal_rpc = solana_rpc.clone();
     let signal_jupiter = jupiter_client.clone();
     let signal_dex = dex_executor.clone();
+    let signal_market_data = market_data_provider.clone();
     let signal_alert = alert_manager.clone();
     tokio::spawn(async move {
         trading_engine::generate_trading_signals(
@@ -171,6 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             signal_rpc,
             signal_jupiter,
             signal_dex,
+            signal_market_data,
             signal_alert
         ).await;
     });
@@ -201,6 +230,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_rpc = solana_rpc.clone();
     let api_jupiter = jupiter_client.clone();
     let api_dex = dex_executor.clone();
+    let api_market_data = market_data_provider.clone();
     let api_config = config.api.clone();
     
     log::info!("🌐 Starting Web API on {}:{}", api_config.host, api_config.port);
@@ -208,10 +238,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     alert_manager.send_alert(monitoring::Alert::new(
         monitoring::AlertLevel::Info,
         "System Started",
-        "AgentBurn Trading System is now running with Phase 2 DEX integration"
+        "AgentBurn Trading System running with Phase 3 Market Data integration"
     )).await;
     
-    api::start_server(api_engine, api_risk, api_solana, api_rpc, api_jupiter, api_dex, api_config).await;
+    api::start_server(api_engine, api_risk, api_solana, api_rpc, api_jupiter, api_dex, api_market_data, api_config).await;
     
     Ok(())
 }
