@@ -1,3 +1,6 @@
+//! PumpFun memecoin monitoring and analysis
+//! Integrated into AI orchestrator for memecoin opportunity detection
+
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use chrono::Utc;

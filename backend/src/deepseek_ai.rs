@@ -1,3 +1,6 @@
+//! DeepSeek AI client for trading analysis
+//! Request/response structs used internally by AI orchestrator
+
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 

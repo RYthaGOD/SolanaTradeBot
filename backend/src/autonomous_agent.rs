@@ -46,8 +46,9 @@ impl AutonomousAgent {
         trading_engine: Arc<Mutex<TradingEngine>>,
         risk_manager: Arc<Mutex<RiskManager>>,
     ) -> Self {
+        let use_real_oracle = std::env::var("SOLANA_RPC_URL").is_ok();
         Self {
-            oracle_client: Arc::new(SwitchboardClient::new(rpc_url)),
+            oracle_client: Arc::new(SwitchboardClient::new(rpc_url, use_real_oracle)),
             dex_client: Arc::new(DexScreenerClient::new()),
             pumpfun_client: Arc::new(PumpFunClient::new()),
             trading_engine,

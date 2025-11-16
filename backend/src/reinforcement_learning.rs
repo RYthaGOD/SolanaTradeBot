@@ -1,3 +1,6 @@
+//! Reinforcement Learning module - Complete RL implementation with Q-learning
+//! Integrated into AI orchestrator for adaptive trading strategies
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;

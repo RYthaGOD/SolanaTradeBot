@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::VecDeque;
 
 /// Advanced quantitative analysis module with technical indicators
 #[derive(Debug, Clone)]

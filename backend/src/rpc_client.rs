@@ -3,7 +3,6 @@ use solana_sdk::{
     commitment_config::CommitmentConfig,
     pubkey::Pubkey,
     signature::{Keypair, Signature},
-    signer::Signer,
     transaction::Transaction,
     native_token::LAMPORTS_PER_SOL,
 };
@@ -92,7 +91,7 @@ impl SolanaRpcClient {
     pub async fn send_and_confirm_transaction(
         &self,
         transaction: &Transaction,
-        signer: &Keypair,
+        _signer: &Keypair,
     ) -> Result<Signature, String> {
         let signature = self.send_transaction(transaction).await?;
         

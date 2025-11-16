@@ -232,6 +232,16 @@ impl TradingEngine {
         data
     }
     
+    /// Get return on investment (ROI) percentage based on initial balance
+    pub fn get_roi(&self) -> f64 {
+        ((self.current_balance - self.initial_balance) / self.initial_balance) * 100.0
+    }
+    
+    /// Get total portfolio value including current positions
+    pub fn get_total_value(&self, current_prices: &HashMap<String, f64>) -> f64 {
+        self.get_portfolio_value(current_prices)
+    }
+    
     /// Calculate Exponential Moving Average (more responsive than SMA)
     pub(crate) fn calculate_ema_static(prices: &[f64], period: usize) -> f64 {
         if prices.is_empty() {

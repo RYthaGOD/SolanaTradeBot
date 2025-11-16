@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::time::{Duration, SystemTime};
-use std::collections::HashMap;
 
 /// DEX Screener token pair data (matches official API response)
 /// API Docs: https://docs.dexscreener.com/api/reference
@@ -135,28 +134,41 @@ impl DexScreenerClient {
     
     /// Check and enforce rate limit (300 requests per minute)
     async fn check_rate_limit(&self) -> Result<(), Box<dyn Error>> {
-        let mut last_time = self.last_request_time.lock().unwrap();
-        let mut count = self.request_count.lock().unwrap();
+        let wait_time = {
+            let mut last_time = self.last_request_time.lock().unwrap();
+            let mut count = self.request_count.lock().unwrap();
+            
+            let now = SystemTime::now();
+            let elapsed = now.duration_since(*last_time).unwrap_or(Duration::from_secs(60));
+            
+            // Reset counter after 1 minute
+            if elapsed >= Duration::from_secs(60) {
+                *count = 0;
+                *last_time = now;
+            }
+            
+            // Check rate limit
+            let wait = if *count >= 300 {
+                let wait_time = Duration::from_secs(60) - elapsed;
+                log::warn!("Rate limit reached, waiting {:?}", wait_time);
+                Some(wait_time)
+            } else {
+                *count += 1;
+                None
+            };
+            
+            wait
+        }; // MutexGuards are dropped here
         
-        let now = SystemTime::now();
-        let elapsed = now.duration_since(*last_time).unwrap_or(Duration::from_secs(60));
-        
-        // Reset counter after 1 minute
-        if elapsed >= Duration::from_secs(60) {
-            *count = 0;
-            *last_time = now;
-        }
-        
-        // Check rate limit
-        if *count >= 300 {
-            let wait_time = Duration::from_secs(60) - elapsed;
-            log::warn!("Rate limit reached, waiting {:?}", wait_time);
-            tokio::time::sleep(wait_time).await;
+        // Await outside the mutex lock
+        if let Some(wait) = wait_time {
+            tokio::time::sleep(wait).await;
+            let mut last_time = self.last_request_time.lock().unwrap();
+            let mut count = self.request_count.lock().unwrap();
             *count = 0;
             *last_time = SystemTime::now();
         }
         
-        *count += 1;
         Ok(())
     }
     
@@ -304,7 +316,7 @@ impl DexScreenerClient {
             let momentum_5m = (pair.price_change.m5 / 10.0).min(1.0).max(0.0); // 10% = 100 score
             let momentum_1h = (pair.price_change.h1 / 15.0).min(1.0).max(0.0); // 15% = 100 score
             let momentum_6h = (pair.price_change.h6 / 25.0).min(1.0).max(0.0); // 25% = 100 score
-            momentum_score = (momentum_5m * 40.0 + momentum_1h * 35.0 + momentum_6h * 25.0);
+            momentum_score = momentum_5m * 40.0 + momentum_1h * 35.0 + momentum_6h * 25.0;
             
             if momentum_5m > 0.5 {
                 signals.push(format!("Strong 5m momentum: +{:.1}%", pair.price_change.m5));
@@ -327,7 +339,7 @@ impl DexScreenerClient {
             } else {
                 0.0
             };
-            volume_score = (vol_ratio_1h * 50.0 + vol_ratio_5m * 50.0);
+            volume_score = vol_ratio_1h * 50.0 + vol_ratio_5m * 50.0;
             
             if vol_ratio_1h > 0.5 {
                 signals.push("Increasing volume".to_string());

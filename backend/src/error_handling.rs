@@ -1,3 +1,6 @@
+//! Error handling utilities with retry logic and circuit breaker
+//! Integrated throughout the system for production error management
+
 use std::error::Error;
 use std::fmt;
 use std::time::Duration;

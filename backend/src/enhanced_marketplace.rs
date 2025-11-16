@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use chrono::Utc;
 
-use crate::signal_platform::{SignalMarketplace, TradingSignalData, SignalProvider, SignalStatus};
+use crate::signal_platform::{SignalMarketplace, TradingSignalData};
 
 /// Enhanced marketplace with ratings, subscriptions, and performance tracking
 pub struct EnhancedMarketplace {
@@ -395,9 +395,9 @@ impl EnhancedMarketplace {
 
                 // Get average rating
                 let ratings = self.signal_ratings.lock().await;
-                let provider_signals: Vec<String> = ratings
+                let _provider_signals: Vec<String> = ratings
                     .values()
-                    .filter(|r| {
+                    .filter(|_r| {
                         // Would need to lookup provider_id from signal_id in real implementation
                         true
                     })
