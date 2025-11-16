@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use std::time::{Duration, SystemTime};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Mobula API token pair data (GMGN-compatible, multi-chain support)
 /// API Docs: https://docs.mobula.io/
@@ -135,8 +136,15 @@ pub struct DexScreenerClient {
     api_url: String,
     api_key: Option<String>,
     client: reqwest::Client,
-    last_request_time: std::sync::Arc<std::sync::Mutex<SystemTime>>,
-    request_count: std::sync::Arc<std::sync::Mutex<u32>>,
+    last_request_time: Arc<Mutex<SystemTime>>,
+    request_count: Arc<Mutex<u32>>,
+    trending_cache: Arc<Mutex<Option<CacheEntry<Vec<TokenPair>>>>>,
+    opportunity_cache: Arc<Mutex<Option<CacheEntry<Vec<TradingOpportunity>>>>>,
+}
+
+struct CacheEntry<T> {
+    data: T,
+    fetched_at: Instant,
 }
 
 impl DexScreenerClient {
@@ -158,8 +166,10 @@ impl DexScreenerClient {
             api_url: "https://api.mobula.io/api/1".to_string(),
             api_key,
             client: client_builder.build().unwrap(),
-            last_request_time: std::sync::Arc::new(std::sync::Mutex::new(SystemTime::now())),
-            request_count: std::sync::Arc::new(std::sync::Mutex::new(0)),
+            last_request_time: Arc::new(Mutex::new(SystemTime::now())),
+            request_count: Arc::new(Mutex::new(0)),
+            trending_cache: Arc::new(Mutex::new(None)),
+            opportunity_cache: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -298,6 +308,13 @@ impl DexScreenerClient {
         &self,
         min_liquidity_usd: f64,
     ) -> Result<Vec<TokenPair>, Box<dyn Error>> {
+        if let Some(cached) = self.get_cached(&self.trending_cache, Duration::from_secs(20)) {
+            return Ok(cached
+                .into_iter()
+                .filter(|p| p.liquidity.usd.unwrap_or(0.0) >= min_liquidity_usd)
+                .collect());
+        }
+
         self.check_rate_limit().await?;
         let url = format!(
             "{}/market/blockchain/pairs?blockchain=solana&sortBy=volume24h",
@@ -324,6 +341,7 @@ impl DexScreenerClient {
             .into_iter()
             .filter(|p| p.liquidity.usd.unwrap_or(0.0) >= min_liquidity_usd && p.volume.h24 > 0.0)
             .collect();
+        self.store_cache(&self.trending_cache, trending.clone());
         Ok(trending)
     }
 
@@ -416,10 +434,40 @@ impl DexScreenerClient {
         &self,
         limit: usize,
     ) -> Result<Vec<TradingOpportunity>, Box<dyn Error>> {
+        if let Some(mut cached) = self.get_cached(&self.opportunity_cache, Duration::from_secs(30))
+        {
+            cached.truncate(limit);
+            return Ok(cached);
+        }
+
         let pairs = self.find_trending_solana_tokens(5000.0).await?;
         let mut opportunities = self.analyze_opportunities(pairs).await;
+        self.store_cache(&self.opportunity_cache, opportunities.clone());
         opportunities.truncate(limit);
         Ok(opportunities)
+    }
+
+    fn get_cached<T: Clone>(
+        &self,
+        cache: &Arc<Mutex<Option<CacheEntry<T>>>>,
+        ttl: Duration,
+    ) -> Option<T> {
+        let guard = cache.lock().unwrap();
+        guard.as_ref().and_then(|entry| {
+            if entry.fetched_at.elapsed() < ttl {
+                Some(entry.data.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn store_cache<T>(&self, cache: &Arc<Mutex<Option<CacheEntry<T>>>>, data: T) {
+        let mut guard = cache.lock().unwrap();
+        *guard = Some(CacheEntry {
+            data,
+            fetched_at: Instant::now(),
+        });
     }
 }
 

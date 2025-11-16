@@ -3,7 +3,10 @@
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::error::Error;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// PumpFun token launch data
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,6 +73,12 @@ pub struct PumpFunClient {
     moralis_api_url: String,
     moralis_api_key: Option<String>,
     client: reqwest::Client,
+    recent_cache: Arc<Mutex<Option<CacheEntry<Vec<TokenLaunch>>>>>,
+}
+
+struct CacheEntry<T> {
+    data: T,
+    fetched_at: Instant,
 }
 
 impl PumpFunClient {
@@ -84,11 +93,18 @@ impl PumpFunClient {
             log::info!("   Get your API key from: https://admin.moralis.com/");
         }
 
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .user_agent("SolanaTradeBot/1.0")
+            .build()
+            .expect("Failed to build PumpFun HTTP client");
+
         Self {
             api_url: "https://frontend-api.pump.fun".to_string(),
             moralis_api_url: "https://solana-gateway.moralis.io/token/mainnet".to_string(),
             moralis_api_key,
-            client: reqwest::Client::new(),
+            client,
+            recent_cache: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -99,7 +115,14 @@ impl PumpFunClient {
     ) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
         log::debug!("Fetching recent launches from PumpFun");
 
-        let mut launches = self.simulate_recent_launches(limit);
+        if let Some(cached) = self.get_cached_recent(Duration::from_secs(15)) {
+            return Ok(cached.into_iter().take(limit).collect());
+        }
+
+        let mut launches = match self.fetch_recent_launches_api(limit).await {
+            Ok(real) if !real.is_empty() => real,
+            _ => self.simulate_recent_launches(limit),
+        };
 
         if self.moralis_api_key.is_some() {
             log::info!("🔄 Enriching launches with real-time price data from Moralis...");
@@ -133,6 +156,7 @@ impl PumpFunClient {
             );
         }
 
+        self.store_recent_cache(launches.clone());
         Ok(launches)
     }
 
@@ -215,6 +239,127 @@ impl PumpFunClient {
             .map_err(|e| format!("Failed to parse response: {}", e))?;
 
         Ok(Some(price_data))
+    }
+
+    async fn fetch_recent_launches_api(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
+        let url = format!("{}/coins/recent?limit={}", self.api_url, limit.min(50));
+        let response = self
+            .client
+            .get(&url)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("PumpFun API request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "unknown error".to_string());
+            return Err(format!("PumpFun API error {}: {}", response.status(), body).into());
+        }
+
+        let payload: Value = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse PumpFun response: {}", e))?;
+
+        let coins = payload
+            .get("coins")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .or_else(|| payload.as_array().cloned())
+            .unwrap_or_default();
+
+        let mut launches = Vec::new();
+        for coin in coins {
+            let mint = coin
+                .get("mint")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if mint.is_empty() {
+                continue;
+            }
+
+            launches.push(TokenLaunch {
+                mint,
+                name: coin
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unnamed")
+                    .to_string(),
+                symbol: coin
+                    .get("symbol")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("COIN")
+                    .to_uppercase(),
+                uri: coin
+                    .get("image_uri")
+                    .or_else(|| coin.get("uri"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                creator: coin
+                    .get("creator")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string(),
+                created_timestamp: coin
+                    .get("created_timestamp")
+                    .or_else(|| coin.get("created_timestamp_unix"))
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or_else(|| Utc::now().timestamp()),
+                market_cap: coin
+                    .get("market_cap")
+                    .or_else(|| coin.get("current_market_cap"))
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0),
+                reply_count: coin
+                    .get("reply_count")
+                    .or_else(|| coin.get("replies"))
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32,
+                is_currently_live: coin
+                    .get("is_currently_live")
+                    .or_else(|| coin.get("is_live"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(true),
+                king_of_the_hill_timestamp: coin
+                    .get("king_of_the_hill_timestamp")
+                    .and_then(|v| v.as_i64()),
+                bonding_curve: coin
+                    .get("bonding_curve")
+                    .or_else(|| coin.get("bonding_curve_address"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            });
+        }
+
+        Ok(launches)
+    }
+
+    fn get_cached_recent(&self, ttl: Duration) -> Option<Vec<TokenLaunch>> {
+        let guard = self.recent_cache.lock().unwrap();
+        guard.as_ref().and_then(|entry| {
+            if entry.fetched_at.elapsed() < ttl {
+                Some(entry.data.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn store_recent_cache(&self, data: Vec<TokenLaunch>) {
+        let mut guard = self.recent_cache.lock().unwrap();
+        *guard = Some(CacheEntry {
+            data,
+            fetched_at: Instant::now(),
+        });
     }
 
     fn simulate_recent_launches(&self, limit: usize) -> Vec<TokenLaunch> {
