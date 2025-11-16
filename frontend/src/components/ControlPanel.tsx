@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import { httpJson } from '../utils/http';
 
 const API_V2_BASE = 'http://localhost:8081';
 
@@ -45,23 +45,25 @@ const ControlPanel: React.FC = () => {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [category, setCategory] = useState<string>('All');
 
-  const executeOperation = async (op: Operation) => {
-    setActiveOp(op.endpoint);
-    setLoading({ ...loading, [op.endpoint]: true });
-    setErrors({ ...errors, [op.endpoint]: '' });
+    const executeOperation = async (op: Operation) => {
+      setActiveOp(op.endpoint);
+      setLoading(prev => ({ ...prev, [op.endpoint]: true }));
+      setErrors(prev => ({ ...prev, [op.endpoint]: '' }));
 
-    try {
-      const response = await axios.post(`${API_V2_BASE}/execute/${op.endpoint}`, op.params || {}, {
-        timeout: 10000,
-      });
-      setResults({ ...results, [op.endpoint]: response.data });
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.error || error.message || 'Unknown error';
-      setErrors({ ...errors, [op.endpoint]: errorMsg });
-    } finally {
-      setLoading({ ...loading, [op.endpoint]: false });
-    }
-  };
+      try {
+        const response = await httpJson<any>(`${API_V2_BASE}/execute/${op.endpoint}`, {
+          method: 'POST',
+          data: op.params || {},
+          timeoutMs: 10000,
+        });
+        setResults(prev => ({ ...prev, [op.endpoint]: response }));
+      } catch (error: any) {
+        const errorMsg = error?.message || 'Unknown error';
+        setErrors(prev => ({ ...prev, [op.endpoint]: errorMsg }));
+      } finally {
+        setLoading(prev => ({ ...prev, [op.endpoint]: false }));
+      }
+    };
 
   const categories = ['All', 'Core', 'Infrastructure', 'Specialized'];
   const filteredOps = category === 'All' 

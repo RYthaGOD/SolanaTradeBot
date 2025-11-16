@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 
 interface PortfolioData {
@@ -23,19 +23,19 @@ export default function Portfolio() {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchPortfolio = async () => {
-    try {
-      const response = await axios.get('http://localhost:8080/portfolio')
-      if (response.data.success) {
-        setPortfolio(response.data.data)
+    const fetchPortfolio = async () => {
+      try {
+        const response = await httpJson<{ success: boolean; data: PortfolioData }>('http://localhost:8080/portfolio')
+        if (response.success) {
+          setPortfolio(response.data)
+        }
+        setLoading(false)
+        setError('')
+      } catch {
+        setError('Failed to fetch portfolio data')
+        setLoading(false)
       }
-      setLoading(false)
-      setError('')
-    } catch (err) {
-      setError('Failed to fetch portfolio data')
-      setLoading(false)
     }
-  }
 
   if (loading) {
     return <div className="loading">Loading portfolio...</div>

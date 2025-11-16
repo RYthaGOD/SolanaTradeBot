@@ -1,21 +1,17 @@
+use reqwest::Client;
 /// Jito Block Engine + Bundle Atomic Marketplace (BAM) Integration
-/// 
+///
 /// Jito provides MEV protection and atomic bundle execution on Solana.
 /// This module integrates with Jito's Block Engine for:
 /// - Atomic bundle submission (all-or-nothing execution)
 /// - MEV protection for trades
 /// - Priority fee optimization via tips
 /// - Bundle status tracking
-/// 
+///
 /// Documentation: https://jito-labs.gitbook.io/mev/
-
 use serde::{Deserialize, Serialize};
+use solana_sdk::{pubkey::Pubkey, transaction::Transaction};
 use std::error::Error;
-use reqwest::Client;
-use solana_sdk::{
-    transaction::Transaction,
-    pubkey::Pubkey,
-};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Jito Block Engine endpoints
@@ -183,15 +179,12 @@ impl JitoBamClient {
 
         let bundle_response: BundleResponse = response.json().await?;
         log::info!("Bundle submitted successfully: {}", bundle_response.result);
-        
+
         Ok(bundle_response.result)
     }
 
     /// Check the status of a submitted bundle
-    pub async fn get_bundle_status(
-        &self,
-        bundle_id: &str,
-    ) -> Result<BundleStatus, Box<dyn Error>> {
+    pub async fn get_bundle_status(&self, bundle_id: &str) -> Result<BundleStatus, Box<dyn Error>> {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "id": Self::generate_request_id(),
@@ -208,7 +201,7 @@ impl JitoBamClient {
             .await?;
 
         let status_response: BundleStatusResponse = response.json().await?;
-        
+
         if let Some(bundle_status) = status_response.result.value.first() {
             Ok(bundle_status.status.clone())
         } else {
@@ -217,16 +210,13 @@ impl JitoBamClient {
     }
 
     /// Wait for bundle to land (or fail)
-    pub async fn wait_for_bundle(
-        &self,
-        bundle_id: &str,
-    ) -> Result<BundleStatus, Box<dyn Error>> {
+    pub async fn wait_for_bundle(&self, bundle_id: &str) -> Result<BundleStatus, Box<dyn Error>> {
         let start = SystemTime::now();
         let timeout = std::time::Duration::from_millis(self.config.timeout_ms);
 
         loop {
             let status = self.get_bundle_status(bundle_id).await?;
-            
+
             match status {
                 BundleStatus::Landed | BundleStatus::Failed | BundleStatus::Dropped => {
                     return Ok(status);
@@ -263,9 +253,10 @@ impl JitoBamClient {
                 Err(e) => {
                     log::warn!("Bundle submission attempt {} failed: {}", attempt, e);
                     last_error = Some(e);
-                    
+
                     if attempt < self.config.max_retries {
-                        tokio::time::sleep(std::time::Duration::from_millis(1000 * attempt as u64)).await;
+                        tokio::time::sleep(std::time::Duration::from_millis(1000 * attempt as u64))
+                            .await;
                     }
                 }
             }

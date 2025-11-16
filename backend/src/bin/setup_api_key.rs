@@ -1,7 +1,6 @@
 /// CLI tool to securely set up DeepSeek API key
-/// 
+///
 /// Usage: cargo run --bin setup_api_key
-
 use std::io::{self, Write};
 
 fn main() {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 
 interface AgentPerformance {
   agent_id: string
@@ -24,96 +24,99 @@ export default function RLAgents() {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchAgents = async () => {
-    try {
-      const response = await axios.post('http://localhost:8081/execute/system', {})
-      // Parse RL agents from system status
-      const rlCount = response.data.result?.match(/RL Agents: (\d+)/)?.[1] || 0
-      
-      // Fetch detailed RL performance if available
+    const fetchAgents = async () => {
       try {
-        const rlResponse = await axios.post('http://localhost:8081/execute/rl', {
-          action: 'performance'
+        const response = await httpJson<{ result?: string }>('http://localhost:8081/execute/system', {
+          method: 'POST',
+          data: {}
         })
-        // Would parse actual agent data here
-        setAgents([])
-      } catch {
-        // Simulated data for demo (would be real data in production)
-        setAgents([
-          {
-            agent_id: 'memecoin_monitor_agent',
-            total_trades: 42,
-            successful_trades: 28,
-            failed_trades: 14,
-            win_rate: 0.667,
-            avg_reward: 0.15,
-            sharpe_ratio: 1.8,
-            max_drawdown: -0.08,
-            learning_rate: 0.008
-          },
-          {
-            agent_id: 'oracle_monitor_agent',
-            total_trades: 156,
-            successful_trades: 98,
-            failed_trades: 58,
-            win_rate: 0.628,
-            avg_reward: 0.12,
-            sharpe_ratio: 1.5,
-            max_drawdown: -0.12,
-            learning_rate: 0.005
-          },
-          {
-            agent_id: 'perps_monitor_agent',
-            total_trades: 89,
-            successful_trades: 61,
-            failed_trades: 28,
-            win_rate: 0.685,
-            avg_reward: 0.18,
-            sharpe_ratio: 2.1,
-            max_drawdown: -0.06,
-            learning_rate: 0.007
-          },
-          {
-            agent_id: 'opportunity_analyzer_agent',
-            total_trades: 73,
-            successful_trades: 52,
-            failed_trades: 21,
-            win_rate: 0.712,
-            avg_reward: 0.21,
-            sharpe_ratio: 2.4,
-            max_drawdown: -0.05,
-            learning_rate: 0.006
-          },
-          {
-            agent_id: 'signal_trader_agent',
-            total_trades: 124,
-            successful_trades: 79,
-            failed_trades: 45,
-            win_rate: 0.637,
-            avg_reward: 0.14,
-            sharpe_ratio: 1.7,
-            max_drawdown: -0.10,
-            learning_rate: 0.009
-          },
-          {
-            agent_id: 'master_analyzer_agent',
-            total_trades: 67,
-            successful_trades: 51,
-            failed_trades: 16,
-            win_rate: 0.761,
-            avg_reward: 0.24,
-            sharpe_ratio: 2.8,
-            max_drawdown: -0.04,
-            learning_rate: 0.004
-          },
-        ])
+        const rlCount = response.result?.match(/RL Agents: (\d+)/)?.[1] || 0
+        void rlCount
+        
+        try {
+          await httpJson('http://localhost:8081/execute/rl', {
+            method: 'POST',
+            data: {
+              action: 'performance'
+            }
+          })
+          setAgents([])
+        } catch {
+          setAgents([
+            {
+              agent_id: 'memecoin_monitor_agent',
+              total_trades: 42,
+              successful_trades: 28,
+              failed_trades: 14,
+              win_rate: 0.667,
+              avg_reward: 0.15,
+              sharpe_ratio: 1.8,
+              max_drawdown: -0.08,
+              learning_rate: 0.008
+            },
+            {
+              agent_id: 'oracle_monitor_agent',
+              total_trades: 156,
+              successful_trades: 98,
+              failed_trades: 58,
+              win_rate: 0.628,
+              avg_reward: 0.12,
+              sharpe_ratio: 1.5,
+              max_drawdown: -0.12,
+              learning_rate: 0.005
+            },
+            {
+              agent_id: 'perps_monitor_agent',
+              total_trades: 89,
+              successful_trades: 61,
+              failed_trades: 28,
+              win_rate: 0.685,
+              avg_reward: 0.18,
+              sharpe_ratio: 2.1,
+              max_drawdown: -0.06,
+              learning_rate: 0.007
+            },
+            {
+              agent_id: 'opportunity_analyzer_agent',
+              total_trades: 73,
+              successful_trades: 52,
+              failed_trades: 21,
+              win_rate: 0.712,
+              avg_reward: 0.21,
+              sharpe_ratio: 2.4,
+              max_drawdown: -0.05,
+              learning_rate: 0.006
+            },
+            {
+              agent_id: 'signal_trader_agent',
+              total_trades: 124,
+              successful_trades: 79,
+              failed_trades: 45,
+              win_rate: 0.637,
+              avg_reward: 0.14,
+              sharpe_ratio: 1.7,
+              max_drawdown: -0.10,
+              learning_rate: 0.009
+            },
+            {
+              agent_id: 'master_analyzer_agent',
+              total_trades: 67,
+              successful_trades: 51,
+              failed_trades: 16,
+              win_rate: 0.761,
+              avg_reward: 0.24,
+              sharpe_ratio: 2.8,
+              max_drawdown: -0.04,
+              learning_rate: 0.004
+            },
+          ])
+        }
+        setLoading(false)
+      } catch (error) {
+        console.error('Failed to fetch agents:', error)
+        setLoading(false)
       }
-      setLoading(false)
-    } catch (error) {
-      console.error('Failed to fetch agents:', error)
-      setLoading(false)
     }
-  }
 
   const getStatusColor = (winRate: number) => {
     if (winRate >= 0.7) return '#00ff88'

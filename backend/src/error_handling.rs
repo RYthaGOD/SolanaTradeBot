@@ -90,8 +90,13 @@ where
 
     loop {
         attempt += 1;
-        
-        log::debug!("Attempting {} (attempt {}/{})", operation_name, attempt, config.max_attempts);
+
+        log::debug!(
+            "Attempting {} (attempt {}/{})",
+            operation_name,
+            attempt,
+            config.max_attempts
+        );
 
         match operation().await {
             Ok(result) => {
@@ -101,18 +106,29 @@ where
                 return Ok(result);
             }
             Err(e) if attempt >= config.max_attempts => {
-                log::error!("❌ {} failed after {} attempts: {}", operation_name, attempt, e);
+                log::error!(
+                    "❌ {} failed after {} attempts: {}",
+                    operation_name,
+                    attempt,
+                    e
+                );
                 return Err(e);
             }
             Err(e) => {
-                log::warn!("⚠️ {} attempt {} failed: {}. Retrying in {:?}...", 
-                          operation_name, attempt, e, delay);
-                
+                log::warn!(
+                    "⚠️ {} attempt {} failed: {}. Retrying in {:?}...",
+                    operation_name,
+                    attempt,
+                    e,
+                    delay
+                );
+
                 sleep(delay).await;
-                
+
                 // Exponential backoff
                 delay = Duration::from_millis(
-                    (delay.as_millis() as f64 * config.backoff_multiplier).min(config.max_delay.as_millis() as f64) as u64
+                    (delay.as_millis() as f64 * config.backoff_multiplier)
+                        .min(config.max_delay.as_millis() as f64) as u64,
                 );
             }
         }
@@ -123,7 +139,9 @@ where
 pub fn is_retryable_error(error: &TradingError) -> bool {
     matches!(
         error,
-        TradingError::NetworkError(_) | TradingError::TimeoutError(_) | TradingError::RateLimitExceeded(_)
+        TradingError::NetworkError(_)
+            | TradingError::TimeoutError(_)
+            | TradingError::RateLimitExceeded(_)
     )
 }
 
@@ -140,8 +158,8 @@ pub struct CircuitBreaker {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CircuitState {
-    Closed,  // Normal operation
-    Open,    // Blocking requests
+    Closed,   // Normal operation
+    Open,     // Blocking requests
     HalfOpen, // Testing if service recovered
 }
 
@@ -176,7 +194,9 @@ impl CircuitBreaker {
                         log::info!("🔄 Circuit breaker moving to HALF-OPEN state");
                         drop(last_failure);
                     } else {
-                        return Err(TradingError::ApiError("Circuit breaker is OPEN".to_string()));
+                        return Err(TradingError::ApiError(
+                            "Circuit breaker is OPEN".to_string(),
+                        ));
                     }
                 }
             }
@@ -206,7 +226,7 @@ impl CircuitBreaker {
         *successes += 1;
 
         let state = self.state.lock().await.clone();
-        
+
         if state == CircuitState::HalfOpen && *successes >= self.success_threshold {
             *self.state.lock().await = CircuitState::Closed;
             *self.failures.lock().await = 0;
@@ -249,9 +269,15 @@ mod tests {
 
     #[test]
     fn test_is_retryable_error() {
-        assert!(is_retryable_error(&TradingError::NetworkError("test".to_string())));
-        assert!(is_retryable_error(&TradingError::TimeoutError("test".to_string())));
-        assert!(!is_retryable_error(&TradingError::ValidationError("test".to_string())));
+        assert!(is_retryable_error(&TradingError::NetworkError(
+            "test".to_string()
+        )));
+        assert!(is_retryable_error(&TradingError::TimeoutError(
+            "test".to_string()
+        )));
+        assert!(!is_retryable_error(&TradingError::ValidationError(
+            "test".to_string()
+        )));
     }
 
     #[tokio::test]

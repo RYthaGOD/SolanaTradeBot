@@ -1,7 +1,7 @@
 use futures::{SinkExt, StreamExt};
+use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use warp::ws::{Message, WebSocket};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarketUpdate {
@@ -49,9 +49,12 @@ pub async fn handle_websocket(ws: WebSocket, broadcaster: WSBroadcaster) {
     log::info!("New WebSocket connection established");
 
     // Send initial ping
-    if let Err(e) = ws_tx.send(Message::text(
-        serde_json::to_string(&WSMessage::Ping).unwrap()
-    )).await {
+    if let Err(e) = ws_tx
+        .send(Message::text(
+            serde_json::to_string(&WSMessage::Ping).unwrap(),
+        ))
+        .await
+    {
         log::error!("Failed to send ping: {}", e);
         return;
     }

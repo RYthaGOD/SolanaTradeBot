@@ -1,15 +1,15 @@
 //! Reinforcement Learning module - Complete RL implementation with Q-learning
 //! Integrated into AI orchestrator for adaptive trading strategies
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
 
 use crate::deepseek_ai::{DeepSeekClient, TradingDecision};
-use crate::signal_platform::TradingSignalData;
 use crate::historical_data::{HistoricalDataManager, HistoricalFeatures, PriceDataPoint};
+use crate::signal_platform::TradingSignalData;
 
 /// Experience replay buffer for reinforcement learning
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -78,7 +78,7 @@ impl AgentPerformance {
 
     pub fn update(&mut self, reward: f64) {
         self.total_trades += 1;
-        
+
         if reward > 0.0 {
             self.successful_trades += 1;
             self.total_profit += reward;
@@ -108,9 +108,11 @@ impl AgentPerformance {
         }
 
         let mean_return: f64 = returns.iter().sum::<f64>() / returns.len() as f64;
-        let variance: f64 = returns.iter()
+        let variance: f64 = returns
+            .iter()
             .map(|r| (r - mean_return).powi(2))
-            .sum::<f64>() / returns.len() as f64;
+            .sum::<f64>()
+            / returns.len() as f64;
         let std_dev = variance.sqrt();
 
         if std_dev > 0.0 {
@@ -127,8 +129,8 @@ pub struct RLAgent {
     experience_buffer: Arc<Mutex<VecDeque<Experience>>>,
     pub(crate) performance: Arc<Mutex<AgentPerformance>>,
     q_table: Arc<Mutex<HashMap<String, f64>>>, // Simple Q-learning table
-    pub(crate) epsilon: f64, // Exploration rate
-    gamma: f64,   // Discount factor
+    pub(crate) epsilon: f64,                   // Exploration rate
+    gamma: f64,                                // Discount factor
     max_buffer_size: usize,
     historical_data: Arc<Mutex<HistoricalDataManager>>, // Historical price data
 }
@@ -150,13 +152,13 @@ impl RLAgent {
             historical_data: Arc::new(Mutex::new(HistoricalDataManager::new(1000))), // Keep 1000 data points per symbol
         }
     }
-    
+
     /// Add historical price data for training
     pub async fn add_historical_data(&self, symbol: String, data_point: PriceDataPoint) {
         let mut historical = self.historical_data.lock().await;
         historical.add_price_data(symbol, data_point);
     }
-    
+
     /// Get historical features for a symbol
     pub async fn get_historical_features(&self, symbol: &str) -> Option<HistoricalFeatures> {
         let historical = self.historical_data.lock().await;
@@ -190,7 +192,18 @@ impl RLAgent {
         // Exploitation: Use learned knowledge
         if let Some(ref deepseek) = self.deepseek_client {
             // Use DeepSeek LLM for enhanced decision making with historical data
-            match self.ask_deepseek_with_learning(deepseek, state, current_win_rate, avg_reward, learning_rate, historical_experiences, historical_features.as_ref()).await {
+            match self
+                .ask_deepseek_with_learning(
+                    deepseek,
+                    state,
+                    current_win_rate,
+                    avg_reward,
+                    learning_rate,
+                    historical_experiences,
+                    historical_features.as_ref(),
+                )
+                .await
+            {
                 Ok(decision) => {
                     return Ok(Action {
                         action_type: decision.action,
@@ -222,13 +235,15 @@ impl RLAgent {
         historical_features: Option<&HistoricalFeatures>,
     ) -> Result<TradingDecision, Box<dyn std::error::Error>> {
         // Analyze recent experiences for patterns
-        let recent_successes: Vec<&Experience> = historical_experiences.iter()
+        let recent_successes: Vec<&Experience> = historical_experiences
+            .iter()
             .filter(|e| e.reward > 0.0)
             .rev()
             .take(5)
             .collect();
 
-        let recent_failures: Vec<&Experience> = historical_experiences.iter()
+        let recent_failures: Vec<&Experience> = historical_experiences
+            .iter()
             .filter(|e| e.reward < 0.0)
             .rev()
             .take(5)
@@ -256,7 +271,10 @@ impl RLAgent {
                 features.price_changes.change_4h,
                 features.price_changes.change_24h,
                 features.volatility,
-                features.rsi.map(|r| format!("{:.1}", r)).unwrap_or_else(|| "N/A".to_string()),
+                features
+                    .rsi
+                    .map(|r| format!("{:.1}", r))
+                    .unwrap_or_else(|| "N/A".to_string()),
                 features.volume_ratio,
                 features.trend_strength,
                 features.moving_averages.ema_10.unwrap_or(0.0),
@@ -266,7 +284,7 @@ impl RLAgent {
         } else {
             "\nHISTORICAL DATA ANALYSIS: Not available".to_string()
         };
-        
+
         // Build learning context for DeepSeek
         let _learning_context = format!(
             "AGENT PERFORMANCE CONTEXT:\n\
@@ -310,14 +328,16 @@ impl RLAgent {
         let volume_history = vec![state.volume * 0.9, state.volume * 0.95, state.volume];
 
         // Enhanced analysis with learning context
-        let decision = deepseek.analyze_trade(
-            &state.symbol,
-            state.price,
-            &price_history,
-            &volume_history,
-            10000.0, // Placeholder portfolio value
-            0.0,
-        ).await?;
+        let decision = deepseek
+            .analyze_trade(
+                &state.symbol,
+                state.price,
+                &price_history,
+                &volume_history,
+                10000.0, // Placeholder portfolio value
+                0.0,
+            )
+            .await?;
 
         Ok(decision)
     }
@@ -328,15 +348,18 @@ impl RLAgent {
             return "None".to_string();
         }
 
-        experiences.iter()
-            .map(|e| format!(
-                "  • {} on {} at ${:.2}: Reward {:.4} (Conf: {:.2})",
-                e.action.action_type,
-                e.state.symbol,
-                e.action.price,
-                e.reward,
-                e.action.confidence
-            ))
+        experiences
+            .iter()
+            .map(|e| {
+                format!(
+                    "  • {} on {} at ${:.2}: Reward {:.4} (Conf: {:.2})",
+                    e.action.action_type,
+                    e.state.symbol,
+                    e.action.price,
+                    e.reward,
+                    e.action.confidence
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }
@@ -345,11 +368,11 @@ impl RLAgent {
     fn generate_exploratory_action(&self, state: &MarketState) -> Action {
         let actions = ["BUY", "SELL", "HOLD"];
         let action_type = actions[rand::random::<usize>() % actions.len()].to_string();
-        
+
         Action {
             action_type,
             confidence: 0.3 + rand::random::<f64>() * 0.4, // Lower confidence for exploration
-            size: 0.02 + rand::random::<f64>() * 0.05, // Smaller size for exploration
+            size: 0.02 + rand::random::<f64>() * 0.05,     // Smaller size for exploration
             price: state.price,
         }
     }
@@ -388,8 +411,10 @@ impl RLAgent {
         let sentiment_bucket = (state.sentiment_score / 10.0).floor() as i32; // Finer: 10 instead of 20
         let volume_bucket = (state.volume.log10() / 0.5).floor() as i32; // Add volume dimension
 
-        format!("{}:{}:{}:{}:{}", 
-            state.symbol, price_bucket, change_bucket, sentiment_bucket, volume_bucket)
+        format!(
+            "{}:{}:{}:{}:{}",
+            state.symbol, price_bucket, change_bucket, sentiment_bucket, volume_bucket
+        )
     }
 
     /// Record experience and learn from it
@@ -397,7 +422,7 @@ impl RLAgent {
         // Add to buffer
         let mut buffer = self.experience_buffer.lock().await;
         buffer.push_back(experience.clone());
-        
+
         // Keep buffer size limited
         while buffer.len() > self.max_buffer_size {
             buffer.pop_front();
@@ -437,7 +462,8 @@ impl RLAgent {
         let next_max_q = if let Some(ref next_state) = experience.next_state {
             let next_state_key = self.encode_state(next_state);
             let actions = ["BUY", "SELL", "HOLD"];
-            actions.iter()
+            actions
+                .iter()
                 .map(|a| {
                     let key = format!("{}:{}", next_state_key, a);
                     q_table.get(&key).copied().unwrap_or(0.0)
@@ -485,11 +511,7 @@ impl RLAgent {
     /// Get recent experiences for analysis
     pub async fn get_recent_experiences(&self, count: usize) -> Vec<Experience> {
         let buffer = self.experience_buffer.lock().await;
-        buffer.iter()
-            .rev()
-            .take(count)
-            .cloned()
-            .collect()
+        buffer.iter().rev().take(count).cloned().collect()
     }
 
     /// Adaptive exploration decay based on performance
@@ -497,7 +519,7 @@ impl RLAgent {
         let performance = self.performance.lock().await;
         let win_rate = performance.win_rate;
         drop(performance);
-        
+
         // Adaptive epsilon decay
         if win_rate > 0.6 {
             // Doing well, reduce exploration more aggressively
@@ -509,15 +531,27 @@ impl RLAgent {
             // Normal decay
             self.epsilon = (self.epsilon * 0.997).max(0.05); // Min 5% exploration
         }
-        
-        log::debug!("Agent {} epsilon decayed to {:.3}, win_rate: {:.2}%", 
-                    self.agent_id, self.epsilon, win_rate * 100.0);
+
+        log::debug!(
+            "Agent {} epsilon decayed to {:.3}, win_rate: {:.2}%",
+            self.agent_id,
+            self.epsilon,
+            win_rate * 100.0
+        );
     }
 }
 
 /// Agent learning coordinator
 pub struct LearningCoordinator {
     agents: Arc<Mutex<HashMap<String, Arc<RLAgent>>>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentSnapshot {
+    pub agent_id: String,
+    pub provider_type: String,
+    pub epsilon: f64,
+    pub performance: AgentPerformance,
 }
 
 impl LearningCoordinator {
@@ -536,7 +570,7 @@ impl LearningCoordinator {
     /// Update all agents with market feedback
     pub async fn update_all_agents(&self, signal: &TradingSignalData, outcome: SignalOutcome) {
         let agents = self.agents.lock().await;
-        
+
         if let Some(agent) = agents.get(&signal.provider) {
             let experience = Experience {
                 state: MarketState {
@@ -577,6 +611,23 @@ impl LearningCoordinator {
 
         performance_map
     }
+
+    pub async fn get_agent_snapshots(&self) -> Vec<AgentSnapshot> {
+        let agents = self.agents.lock().await;
+        let mut snapshots = Vec::new();
+
+        for (id, agent) in agents.iter() {
+            let performance = agent.get_performance().await;
+            snapshots.push(AgentSnapshot {
+                agent_id: id.clone(),
+                provider_type: agent.provider_type.clone(),
+                epsilon: agent.epsilon,
+                performance,
+            });
+        }
+
+        snapshots
+    }
 }
 
 /// Outcome of a signal for learning
@@ -603,25 +654,21 @@ mod tests {
     fn test_calculate_reward() {
         let reward = RLAgent::calculate_reward(100.0, 110.0, "BUY", 0.8);
         assert!(reward > 0.0);
-        
+
         let loss = RLAgent::calculate_reward(100.0, 90.0, "BUY", 0.8);
         assert!(loss < 0.0);
-        
+
         // Test division by zero protection
         let zero_reward = RLAgent::calculate_reward(0.0, 110.0, "BUY", 0.8);
         assert_eq!(zero_reward, 0.0);
-        
+
         let negative_reward = RLAgent::calculate_reward(-10.0, 110.0, "BUY", 0.8);
         assert_eq!(negative_reward, 0.0);
     }
 
     #[tokio::test]
     async fn test_rl_agent_creation() {
-        let agent = RLAgent::new(
-            "test_agent".to_string(),
-            "test_provider".to_string(),
-            None,
-        );
+        let agent = RLAgent::new("test_agent".to_string(), "test_provider".to_string(), None);
         assert_eq!(agent.agent_id, "test_agent");
     }
 }

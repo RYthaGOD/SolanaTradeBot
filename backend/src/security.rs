@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 
 /// Simple rate limiter for API endpoints
 pub struct RateLimiter {

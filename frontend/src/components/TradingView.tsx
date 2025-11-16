@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 
 interface TradingSignal {
   symbol: string
@@ -20,19 +20,19 @@ export default function TradingView() {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchSignals = async () => {
-    try {
-      const response = await axios.get('http://localhost:8080/signals')
-      if (response.data.success) {
-        setSignals(response.data.data)
+    const fetchSignals = async () => {
+      try {
+        const response = await httpJson<{ success: boolean; data: TradingSignal[] }>('http://localhost:8080/signals')
+        if (response.success) {
+          setSignals(response.data)
+        }
+        setLoading(false)
+        setError('')
+      } catch {
+        setError('Failed to fetch trading signals')
+        setLoading(false)
       }
-      setLoading(false)
-      setError('')
-    } catch (err) {
-      setError('Failed to fetch trading signals')
-      setLoading(false)
     }
-  }
 
   if (loading) {
     return <div className="loading">Loading trading signals...</div>

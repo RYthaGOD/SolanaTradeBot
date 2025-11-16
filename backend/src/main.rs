@@ -1,33 +1,34 @@
-mod trading_engine;
-mod solana_integration;
-mod risk_management;
-mod ml_models;
+mod ai_orchestrator;
 mod api;
-mod jupiter_integration;
-mod security;
-mod websocket;
+mod api_v2;
+mod autonomous_agent;
+mod database;
 mod deepseek_ai;
+mod dex_screener;
+mod enhanced_marketplace;
 mod error_handling;
 mod fee_optimization;
-mod key_manager;
-mod database;
-mod switchboard_oracle;
-mod dex_screener;
-mod pumpfun;
-mod autonomous_agent;
-mod signal_platform;
-mod specialized_providers;
-mod reinforcement_learning;
-mod secure_config;
-mod enhanced_marketplace;
 mod historical_data;
-mod wallet;
-mod pda;
-mod rpc_client;
-mod quant_analysis;
 mod jito_bam;
-mod ai_orchestrator;
-mod api_v2;
+mod jupiter_integration;
+mod key_manager;
+mod ml_models;
+mod moralis;
+mod pda;
+mod pumpfun;
+mod quant_analysis;
+mod reinforcement_learning;
+mod risk_management;
+mod rpc_client;
+mod secure_config;
+mod security;
+mod signal_platform;
+mod solana_integration;
+mod specialized_providers;
+mod switchboard_oracle;
+mod trading_engine;
+mod wallet;
+mod websocket;
 
 #[cfg(test)]
 mod algorithm_tests;
@@ -44,60 +45,73 @@ async fn main() {
     // Get RPC URL from environment
     let rpc_url = std::env::var("SOLANA_RPC_URL")
         .unwrap_or_else(|_| "https://api.devnet.solana.com".to_string());
-    
+
     // Initialize Database for persistence
     log::info!("💾 Initializing Database...");
     let database = Arc::new(Mutex::new(database::Database::new("trades.db")));
-    
+
     // Initialize Key Manager for secure wallet operations
     log::info!("🔐 Initializing Key Manager...");
     let key_manager = Arc::new(Mutex::new(key_manager::KeyManager::new(false))); // encryption disabled for dev
-    
+
     // Initialize Security Rate Limiter
     log::info!("🛡️ Initializing Security Rate Limiter...");
-    let rate_limiter = Arc::new(Mutex::new(security::RateLimiter::new(100, std::time::Duration::from_secs(60))));
-    
+    let rate_limiter = Arc::new(Mutex::new(security::RateLimiter::new(
+        100,
+        std::time::Duration::from_secs(60),
+    )));
+
     // Initialize DeepSeek AI Client (if API key is set)
     let deepseek_client = if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
         log::info!("🧠 Initializing DeepSeek AI Client...");
-        Some(Arc::new(Mutex::new(deepseek_ai::DeepSeekClient::new(api_key))))
+        Some(Arc::new(Mutex::new(deepseek_ai::DeepSeekClient::new(
+            api_key,
+        ))))
     } else {
         log::warn!("⚠️ DEEPSEEK_API_KEY not set - AI analysis disabled");
         None
     };
-    
+
     // Initialize Error Handling Circuit Breaker
     log::info!("⚡ Initializing Circuit Breaker...");
-    let circuit_breaker = Arc::new(Mutex::new(
-        error_handling::CircuitBreaker::new(5, 3, std::time::Duration::from_secs(60))
-    ));
-    
+    let circuit_breaker = Arc::new(Mutex::new(error_handling::CircuitBreaker::new(
+        5,
+        3,
+        std::time::Duration::from_secs(60),
+    )));
+
     // Initialize Solana client with wallet and PDA integration
     let solana_client = Arc::new(Mutex::new(
-        solana_integration::SolanaClient::new_with_integration(rpc_url.clone()).await
+        solana_integration::SolanaClient::new_with_integration(rpc_url.clone()).await,
     ));
 
     let risk_manager = Arc::new(Mutex::new(risk_management::RiskManager::new(10000.0, 0.1)));
-    
+
     // Use new_default for trading engine (includes built-in risk manager)
-    let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new(risk_manager.clone())));
+    let trading_engine = Arc::new(Mutex::new(trading_engine::TradingEngine::new(
+        risk_manager.clone(),
+    )));
 
     // Initialize WebSocket broadcaster for real-time updates
     log::info!("📡 Initializing WebSocket broadcaster...");
     let ws_broadcaster = websocket::create_ws_broadcaster();
-    
+
     // Initialize Reinforcement Learning Coordinator
     log::info!("🤖 Initializing RL Coordinator...");
-    let rl_coordinator = Arc::new(Mutex::new(reinforcement_learning::LearningCoordinator::new()));
-    
+    let rl_coordinator = Arc::new(Mutex::new(
+        reinforcement_learning::LearningCoordinator::new(),
+    ));
+
     // Initialize Meme Analyzer for memecoin analysis
     log::info!("🎪 Initializing Meme Analyzer...");
     let meme_analyzer = Arc::new(Mutex::new(pumpfun::MemeAnalyzer::new()));
-    
+
     // Initialize X402 Signal Platform
     log::info!("📡 Initializing X402 Signal Platform...");
-    let signal_platform = Arc::new(Mutex::new(signal_platform::SignalMarketplace::new(rpc_url.clone())));
-    
+    let signal_platform = Arc::new(Mutex::new(signal_platform::SignalMarketplace::new(
+        rpc_url.clone(),
+    )));
+
     // Initialize AI Orchestrator that coordinates all systems with DeepSeek intelligence
     log::info!("🤖 Initializing AI Orchestrator...");
     let ai_orchestrator = Arc::new(ai_orchestrator::AIOrchestrator::new(
@@ -114,7 +128,10 @@ async fn main() {
         meme_analyzer.clone(),
         signal_platform.clone(),
     ));
-    log::info!("✅ AI Orchestrator ready with {} available functions", ai_orchestrator.get_available_functions().len());
+    log::info!(
+        "✅ AI Orchestrator ready with {} available functions",
+        ai_orchestrator.get_available_functions().len()
+    );
 
     // Start periodic rate limiter cleanup (uses previously unused cleanup() method)
     let cleanup_limiter = rate_limiter.clone();
@@ -141,42 +158,39 @@ async fn main() {
 
     // Initialize Signal Marketplace
     let marketplace = Arc::new(signal_platform::SignalMarketplace::new(rpc_url.clone()));
-    
+
     // Initialize 6 Specialized Provider Agents with RL integration
     log::info!("🤖 Initializing 6 Specialized Signal Providers with RL...");
-    let providers = specialized_providers::initialize_all_providers(
-        marketplace.clone(),
-        rpc_url.clone(),
-    ).await;
-    
+    let providers =
+        specialized_providers::initialize_all_providers(marketplace.clone(), rpc_url.clone()).await;
+
     // Connect each provider to RL coordinator for centralized learning
     let mut rl_connected_providers = Vec::new();
     for provider in providers {
         let enhanced_provider = provider.with_rl_coordinator(rl_coordinator.clone());
         rl_connected_providers.push(enhanced_provider);
     }
-    
-    log::info!("✅ Initialized {} specialized providers with RL integration", rl_connected_providers.len());
-    
+
+    log::info!(
+        "✅ Initialized {} specialized providers with RL integration",
+        rl_connected_providers.len()
+    );
+
     // Start each specialized provider in its own task
     for provider in rl_connected_providers {
         tokio::spawn(async move {
             provider.run().await;
         });
     }
-    
+
     // Start autonomous trading agent (legacy)
     let agent_engine = trading_engine.clone();
     let agent_risk = risk_manager.clone();
     let agent_rpc = rpc_url.clone();
-    
+
     log::info!("🤖 Starting Legacy Autonomous Trading Agent...");
     tokio::spawn(async move {
-        let agent = autonomous_agent::AutonomousAgent::new(
-            agent_rpc,
-            agent_engine,
-            agent_risk,
-        );
+        let agent = autonomous_agent::AutonomousAgent::new(agent_rpc, agent_engine, agent_risk);
         agent.run().await;
     });
 
@@ -185,19 +199,20 @@ async fn main() {
     let api_risk = risk_manager.clone();
     let api_solana = solana_client.clone();
     let api_orchestrator = ai_orchestrator.clone();
-    
+    let rl_api = rl_coordinator.clone();
+
     log::info!("🌐 Starting Legacy API on port 8080 and AI-Orchestrated API v2 on port 8081...");
-    
+
     // Start legacy API in background
     let legacy_api = tokio::spawn(async move {
-        api::start_server(api_engine, api_risk, api_solana).await;
+        api::start_server(api_engine, api_risk, api_solana, rl_api).await;
     });
-    
+
     // Start new AI-orchestrated API v2 in background
     let ai_api = tokio::spawn(async move {
         api_v2::start_server(api_orchestrator).await;
     });
-    
+
     // Wait for both servers (they run forever)
     let _ = tokio::try_join!(legacy_api, ai_api);
 }

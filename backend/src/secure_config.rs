@@ -1,7 +1,7 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use base64::{Engine as _, engine::general_purpose};
 
 /// Secure configuration manager for API keys and secrets
 pub struct SecureConfig {
@@ -26,7 +26,7 @@ pub struct SecureStorage {
 impl SecureConfig {
     pub fn new() -> Self {
         let config_dir = Self::get_config_directory();
-        
+
         // Create config directory if it doesn't exist
         if !config_dir.exists() {
             let _ = fs::create_dir_all(&config_dir);
@@ -127,20 +127,20 @@ impl SecureConfig {
         }
 
         // Try to parse as plaintext
-        let config: ApiKeyConfig = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse config: {}", e))?;
-        
+        let config: ApiKeyConfig =
+            serde_json::from_str(&content).map_err(|e| format!("Failed to parse config: {}", e))?;
+
         if !config.encrypted {
             log::warn!("⚠️ Loading API key from plaintext storage");
         }
-        
+
         Ok(config.deepseek_api_key)
     }
 
     /// Simple XOR encryption (for demonstration - use proper crypto in production)
     fn encrypt_data(&self, data: &[u8], key: &[u8]) -> Result<String, String> {
         let mut encrypted = Vec::with_capacity(data.len());
-        
+
         for (i, &byte) in data.iter().enumerate() {
             let key_byte = key[i % key.len()];
             encrypted.push(byte ^ key_byte);
@@ -151,11 +151,12 @@ impl SecureConfig {
 
     /// Simple XOR decryption
     fn decrypt_data(&self, encrypted_base64: &str, key: &[u8]) -> Result<Vec<u8>, String> {
-        let encrypted = general_purpose::STANDARD.decode(encrypted_base64)
+        let encrypted = general_purpose::STANDARD
+            .decode(encrypted_base64)
             .map_err(|e| format!("Failed to decode base64: {}", e))?;
 
         let mut decrypted = Vec::with_capacity(encrypted.len());
-        
+
         for (i, &byte) in encrypted.iter().enumerate() {
             let key_byte = key[i % key.len()];
             decrypted.push(byte ^ key_byte);
@@ -182,13 +183,12 @@ impl SecureConfig {
     /// Delete stored API key
     pub fn delete_deepseek_key(&self) -> Result<(), String> {
         let config_path = self.config_dir.join("deepseek_config.json");
-        
+
         if config_path.exists() {
-            fs::remove_file(&config_path)
-                .map_err(|e| format!("Failed to delete config: {}", e))?;
+            fs::remove_file(&config_path).map_err(|e| format!("Failed to delete config: {}", e))?;
             log::info!("🗑️ Deleted DeepSeek API key");
         }
-        
+
         Ok(())
     }
 
@@ -237,7 +237,10 @@ impl SecureConfig {
         config.save_deepseek_key(api_key)?;
 
         println!("\n✅ API key saved successfully!");
-        println!("Location: {:?}\n", config.config_dir.join("deepseek_config.json"));
+        println!(
+            "Location: {:?}\n",
+            config.config_dir.join("deepseek_config.json")
+        );
 
         Ok(api_key.to_string())
     }
@@ -253,7 +256,7 @@ impl SecureConfig {
         let config_path = self.config_dir.join("deepseek_config.json");
         let file_exists = config_path.exists();
         let env_exists = std::env::var("DEEPSEEK_API_KEY").is_ok();
-        
+
         ConfigStatus {
             file_configured: file_exists,
             env_configured: env_exists,
@@ -274,14 +277,14 @@ pub struct ConfigStatus {
 /// Helper function to initialize DeepSeek with secure config
 pub fn init_deepseek_with_secure_config() -> Result<Option<String>, String> {
     let mut config = SecureConfig::new();
-    
+
     // Try to load from secure storage
     if config.is_configured() {
         // Generate encryption key from a master password or use default
         // In production, this should be derived from user input or stored securely
         let encryption_key = SecureConfig::generate_encryption_key();
         config.with_encryption_key(encryption_key);
-        
+
         match config.load_deepseek_key() {
             Ok(Some(key)) => {
                 log::info!("✅ DeepSeek API key loaded from secure storage");
@@ -306,7 +309,7 @@ pub fn init_deepseek_with_secure_config() -> Result<Option<String>, String> {
     log::warn!("⚠️ No DeepSeek API key configured. AI features will be disabled.");
     log::info!("To enable AI features, set DEEPSEEK_API_KEY environment variable");
     log::info!("or run the interactive setup.");
-    
+
     Ok(None)
 }
 
@@ -326,10 +329,10 @@ mod tests {
         let config = SecureConfig::new();
         let key = SecureConfig::generate_encryption_key();
         let data = b"secret data";
-        
+
         let encrypted = config.encrypt_data(data, &key).unwrap();
         let decrypted = config.decrypt_data(&encrypted, &key).unwrap();
-        
+
         assert_eq!(data, decrypted.as_slice());
     }
 

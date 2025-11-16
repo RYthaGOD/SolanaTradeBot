@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 
 interface AtomicFunction {
   name: string
@@ -39,14 +39,14 @@ export default function AIOrchestrator() {
     fetchFunctions()
   }, [])
 
-  const fetchFunctions = async () => {
-    try {
-      const response = await axios.get('http://localhost:8081/functions')
-      setFunctions(response.data.functions || [])
-    } catch (error) {
-      console.error('Failed to fetch functions:', error)
+    const fetchFunctions = async () => {
+      try {
+        const response = await httpJson<{ functions: string[] }>('http://localhost:8081/functions')
+        setFunctions(response.functions || [])
+      } catch (error) {
+        console.error('Failed to fetch functions:', error)
+      }
     }
-  }
 
   const handleOrchestrate = async () => {
     if (!context.trim()) return
@@ -55,11 +55,14 @@ export default function AIOrchestrator() {
     setResult(null)
     
     try {
-      const response = await axios.post('http://localhost:8081/orchestrate', {
-        context: context,
-        parameters: {}
-      })
-      setResult(response.data)
+        const response = await httpJson<any>('http://localhost:8081/orchestrate', {
+          method: 'POST',
+          data: {
+            context,
+            parameters: {}
+          }
+        })
+        setResult(response)
     } catch (error: any) {
       setResult({ error: error.message })
     } finally {
@@ -74,8 +77,11 @@ export default function AIOrchestrator() {
     setResult(null)
     
     try {
-      const response = await axios.post(`http://localhost:8081/execute/${selectedFunction}`, params)
-      setResult(response.data)
+        const response = await httpJson<any>(`http://localhost:8081/execute/${selectedFunction}`, {
+          method: 'POST',
+          data: params
+        })
+        setResult(response)
     } catch (error: any) {
       setResult({ error: error.message })
     } finally {

@@ -28,11 +28,11 @@ pub struct TechnicalIndicators {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignalQuality {
-    pub score: f64,           // 0-100
-    pub strength: String,      // "Strong", "Moderate", "Weak"
-    pub trend: String,         // "Bullish", "Bearish", "Neutral"
-    pub confidence: f64,       // 0-1
-    pub risk_level: String,    // "Low", "Medium", "High"
+    pub score: f64,             // 0-100
+    pub strength: String,       // "Strong", "Moderate", "Weak"
+    pub trend: String,          // "Bullish", "Bearish", "Neutral"
+    pub confidence: f64,        // 0-1
+    pub risk_level: String,     // "Low", "Medium", "High"
     pub recommendation: String, // "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell"
 }
 
@@ -76,7 +76,8 @@ impl QuantAnalyzer {
         let mut losses = 0.0;
 
         for i in 1..=period {
-            let change = prices[prices.len() - period + i - 1] - prices[prices.len() - period + i - 2];
+            let change =
+                prices[prices.len() - period + i - 1] - prices[prices.len() - period + i - 2];
             if change > 0.0 {
                 gains += change;
             } else {
@@ -110,35 +111,49 @@ impl QuantAnalyzer {
     }
 
     /// Calculate Bollinger Bands
-    pub fn calculate_bollinger_bands(&self, prices: &[f64], period: usize, std_dev: f64) -> Option<(f64, f64, f64)> {
+    pub fn calculate_bollinger_bands(
+        &self,
+        prices: &[f64],
+        period: usize,
+        std_dev: f64,
+    ) -> Option<(f64, f64, f64)> {
         let sma = self.calculate_sma(prices, period)?;
-        
+
         let variance: f64 = prices[prices.len() - period..]
             .iter()
             .map(|p| (p - sma).powi(2))
-            .sum::<f64>() / period as f64;
-        
+            .sum::<f64>()
+            / period as f64;
+
         let std = variance.sqrt();
-        
+
         let upper = sma + (std_dev * std);
         let lower = sma - (std_dev * std);
-        
+
         Some((upper, sma, lower))
     }
 
     /// Calculate Average True Range (ATR)
-    pub fn calculate_atr(&self, highs: &[f64], lows: &[f64], closes: &[f64], period: usize) -> Option<f64> {
+    pub fn calculate_atr(
+        &self,
+        highs: &[f64],
+        lows: &[f64],
+        closes: &[f64],
+        period: usize,
+    ) -> Option<f64> {
         if highs.len() < period || lows.len() < period || closes.len() < period {
             return None;
         }
 
         let mut true_ranges = Vec::new();
-        
+
         for i in 1..period {
             let high_low = highs[highs.len() - period + i] - lows[lows.len() - period + i];
-            let high_close = (highs[highs.len() - period + i] - closes[closes.len() - period + i - 1]).abs();
-            let low_close = (lows[lows.len() - period + i] - closes[closes.len() - period + i - 1]).abs();
-            
+            let high_close =
+                (highs[highs.len() - period + i] - closes[closes.len() - period + i - 1]).abs();
+            let low_close =
+                (lows[lows.len() - period + i] - closes[closes.len() - period + i - 1]).abs();
+
             true_ranges.push(high_low.max(high_close).max(low_close));
         }
 
@@ -152,7 +167,7 @@ impl QuantAnalyzer {
         }
 
         let mut obv = 0.0;
-        
+
         for i in 1..prices.len() {
             if prices[i] > prices[i - 1] {
                 obv += volumes[i];
@@ -172,7 +187,7 @@ impl QuantAnalyzer {
 
         let current = prices[prices.len() - 1];
         let past = prices[prices.len() - period - 1];
-        
+
         Some(((current - past) / past) * 100.0)
     }
 
@@ -184,40 +199,45 @@ impl QuantAnalyzer {
 
         let recent_prices = &prices[prices.len() - period..];
         let mut returns = Vec::new();
-        
+
         for i in 1..recent_prices.len() {
             returns.push((recent_prices[i] - recent_prices[i - 1]) / recent_prices[i - 1]);
         }
 
         let mean: f64 = returns.iter().sum::<f64>() / returns.len() as f64;
-        let variance: f64 = returns.iter()
-            .map(|r| (r - mean).powi(2))
-            .sum::<f64>() / returns.len() as f64;
+        let variance: f64 =
+            returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / returns.len() as f64;
 
         Some(variance.sqrt() * 100.0)
     }
 
     /// Calculate all technical indicators
-    pub fn calculate_indicators(&self, prices: &[f64], volumes: &[f64]) -> Option<TechnicalIndicators> {
+    pub fn calculate_indicators(
+        &self,
+        prices: &[f64],
+        volumes: &[f64],
+    ) -> Option<TechnicalIndicators> {
         let sma_10 = self.calculate_sma(prices, 10)?;
         let sma_20 = self.calculate_sma(prices, 20)?;
         let sma_50 = self.calculate_sma(prices, 50);
-        
+
         let ema_12 = self.calculate_ema(prices, 12)?;
         let ema_26 = self.calculate_ema(prices, 26)?;
-        
+
         let rsi_14 = self.calculate_rsi(prices, 14).unwrap_or(50.0);
-        
-        let (macd, macd_signal, macd_histogram) = self.calculate_macd(prices).unwrap_or((0.0, 0.0, 0.0));
-        
-        let (bollinger_upper, bollinger_middle, bollinger_lower) = 
-            self.calculate_bollinger_bands(prices, 20, 2.0).unwrap_or((0.0, 0.0, 0.0));
-        
+
+        let (macd, macd_signal, macd_histogram) =
+            self.calculate_macd(prices).unwrap_or((0.0, 0.0, 0.0));
+
+        let (bollinger_upper, bollinger_middle, bollinger_lower) = self
+            .calculate_bollinger_bands(prices, 20, 2.0)
+            .unwrap_or((0.0, 0.0, 0.0));
+
         // For ATR, we approximate using price ranges
         let highs: Vec<f64> = prices.iter().map(|p| p * 1.001).collect();
         let lows: Vec<f64> = prices.iter().map(|p| p * 0.999).collect();
         let atr_14 = self.calculate_atr(&highs, &lows, prices, 14).unwrap_or(0.0);
-        
+
         let obv = self.calculate_obv(prices, volumes).unwrap_or(0.0);
         let momentum = self.calculate_momentum(prices, 10).unwrap_or(0.0);
         let volatility = self.calculate_volatility(prices, 14).unwrap_or(0.0);
@@ -243,7 +263,11 @@ impl QuantAnalyzer {
     }
 
     /// Analyze signal quality based on technical indicators
-    pub fn analyze_signal_quality(&self, indicators: &TechnicalIndicators, current_price: f64) -> SignalQuality {
+    pub fn analyze_signal_quality(
+        &self,
+        indicators: &TechnicalIndicators,
+        current_price: f64,
+    ) -> SignalQuality {
         let mut score: f64 = 50.0; // Start neutral
         let mut bullish_signals = 0;
         let mut bearish_signals = 0;
@@ -325,7 +349,9 @@ impl QuantAnalyzer {
 
         // Calculate confidence based on score and volatility
         let volatility_factor = (1.0 - (indicators.volatility / 10.0).min(1.0)) * 0.3;
-        let confidence = ((score / 100.0) * 0.7 + volatility_factor).max(0.0).min(1.0);
+        let confidence = ((score / 100.0) * 0.7 + volatility_factor)
+            .max(0.0)
+            .min(1.0);
 
         // Determine risk level
         let risk_level = if indicators.volatility > 5.0 {
@@ -387,7 +413,10 @@ mod tests {
     #[test]
     fn test_rsi_calculation() {
         let analyzer = QuantAnalyzer::new();
-        let prices = vec![44.0, 44.5, 45.0, 45.5, 46.0, 46.5, 47.0, 47.5, 48.0, 48.5, 49.0, 49.5, 50.0, 50.5, 51.0];
+        let prices = vec![
+            44.0, 44.5, 45.0, 45.5, 46.0, 46.5, 47.0, 47.5, 48.0, 48.5, 49.0, 49.5, 50.0, 50.5,
+            51.0,
+        ];
         let rsi = analyzer.calculate_rsi(&prices, 14);
         assert!(rsi.is_some());
         assert!(rsi.unwrap() > 50.0); // Uptrend should have RSI > 50
@@ -396,9 +425,13 @@ mod tests {
     #[test]
     fn test_bollinger_bands() {
         let analyzer = QuantAnalyzer::new();
-        let prices = vec![100.0, 101.0, 102.0, 101.0, 100.0, 99.0, 100.0, 101.0, 102.0, 103.0,
-                          104.0, 103.0, 102.0, 101.0, 100.0, 101.0, 102.0, 103.0, 104.0, 105.0];
-        let (upper, middle, lower) = analyzer.calculate_bollinger_bands(&prices, 20, 2.0).unwrap();
+        let prices = vec![
+            100.0, 101.0, 102.0, 101.0, 100.0, 99.0, 100.0, 101.0, 102.0, 103.0, 104.0, 103.0,
+            102.0, 101.0, 100.0, 101.0, 102.0, 103.0, 104.0, 105.0,
+        ];
+        let (upper, middle, lower) = analyzer
+            .calculate_bollinger_bands(&prices, 20, 2.0)
+            .unwrap();
         assert!(upper > middle);
         assert!(middle > lower);
     }
@@ -433,7 +466,9 @@ mod tests {
     #[test]
     fn test_momentum_calculation() {
         let analyzer = QuantAnalyzer::new();
-        let prices = vec![100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0];
+        let prices = vec![
+            100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0, 110.0,
+        ];
         let momentum = analyzer.calculate_momentum(&prices, 10).unwrap();
         assert!(momentum > 0.0); // Uptrend should have positive momentum
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { httpJson } from '../utils/http'
 
 interface PerformanceData {
   total_return: number
@@ -19,16 +19,11 @@ interface MarketData {
   volume: string
 }
 
-interface DashboardProps {
-  systemStats?: any
-}
-
-export default function Dashboard({ systemStats }: DashboardProps) {
+export default function Dashboard() {
   const [performance, setPerformance] = useState<PerformanceData | null>(null)
   const [marketData, setMarketData] = useState<MarketData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [systemHealth, setSystemHealth] = useState<any>(null)
 
   useEffect(() => {
     fetchData()
@@ -36,32 +31,26 @@ export default function Dashboard({ systemStats }: DashboardProps) {
     return () => clearInterval(interval)
   }, [])
 
-  const fetchData = async () => {
-    try {
-      const [perfRes, marketRes] = await Promise.all([
-        axios.get('http://localhost:8080/performance'),
-        axios.get('http://localhost:8080/market-data')
-      ])
-
-      // Fetch system health from AI Orchestrator
+    const fetchData = async () => {
       try {
-        const systemRes = await axios.post('http://localhost:8081/execute/system', {})
-        setSystemHealth(systemRes.data)
-      } catch {}
+        const [perfRes, marketRes] = await Promise.all([
+          httpJson<{ success: boolean; data: PerformanceData }>('http://localhost:8080/performance'),
+          httpJson<{ success: boolean; data: MarketData[] }>('http://localhost:8080/market-data')
+        ])
 
-      if (perfRes.data.success) {
-        setPerformance(perfRes.data.data)
+        if (perfRes.success) {
+          setPerformance(perfRes.data)
+        }
+        if (marketRes.success) {
+          setMarketData(marketRes.data)
+        }
+        setLoading(false)
+        setError('')
+      } catch {
+        setError('Failed to fetch data. Make sure the backend server is running.')
+        setLoading(false)
       }
-      if (marketRes.data.success) {
-        setMarketData(marketRes.data.data)
-      }
-      setLoading(false)
-      setError('')
-    } catch (err) {
-      setError('Failed to fetch data. Make sure the backend server is running.')
-      setLoading(false)
     }
-  }
 
   if (loading) {
     return <div className="loading">Loading dashboard...</div>
@@ -120,31 +109,32 @@ export default function Dashboard({ systemStats }: DashboardProps) {
         </table>
       </div>
 
-      <div className="card">
-        <h3>Quick Stats</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Sharpe Ratio</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.sharpe_ratio.toFixed(2) || '0.00'}</p>
-          </div>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Max Drawdown</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#c62828' }}>
-              {performance?.max_drawdown.toFixed(2) || '0.00'}%
-            </p>
-          </div>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Total Trades</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.trade_count || 0}</p>
-          </div>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Daily P&L</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: performance && performance.daily_pnl >= 0 ? '#2e7d32' : '#c62828' }}>
-              ${performance?.daily_pnl.toFixed(2) || '0.00'}
-            </p>
+        <div className="card">
+          <h3>Quick Stats</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Sharpe Ratio</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.sharpe_ratio.toFixed(2) || '0.00'}</p>
+            </div>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Max Drawdown</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#c62828' }}>
+                {performance?.max_drawdown.toFixed(2) || '0.00'}%
+              </p>
+            </div>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Total Trades</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.trade_count || 0}</p>
+            </div>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Daily P&L</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: performance && performance.daily_pnl >= 0 ? '#2e7d32' : '#c62828' }}>
+                ${performance?.daily_pnl.toFixed(2) || '0.00'}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+
     </div>
   )
 }

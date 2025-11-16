@@ -1,8 +1,8 @@
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use chrono::Utc;
 
 use crate::signal_platform::{SignalMarketplace, TradingSignalData};
 
@@ -56,9 +56,9 @@ pub struct Subscription {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SubscriptionTier {
-    Basic,      // Limited signals
-    Premium,    // All signals + priority
-    VIP,        // All signals + alpha insights + direct access
+    Basic,   // Limited signals
+    Premium, // All signals + priority
+    VIP,     // All signals + alpha insights + direct access
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,11 +88,11 @@ pub struct SignalPerformance {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PerformanceStatus {
-    Pending,        // Not yet filled
-    Active,         // Position open
-    Won,           // Closed with profit
-    Lost,          // Closed with loss
-    Expired,       // Expired before fill
+    Pending, // Not yet filled
+    Active,  // Position open
+    Won,     // Closed with profit
+    Lost,    // Closed with loss
+    Expired, // Expired before fill
 }
 
 /// Leaderboard for providers
@@ -260,7 +260,8 @@ impl EnhancedMarketplace {
 
         signal_rating.total_ratings += 1;
         signal_rating.sum_ratings += rating as u32;
-        signal_rating.average_rating = signal_rating.sum_ratings as f64 / signal_rating.total_ratings as f64;
+        signal_rating.average_rating =
+            signal_rating.sum_ratings as f64 / signal_rating.total_ratings as f64;
 
         match rating {
             5 => signal_rating.five_star += 1,
@@ -297,16 +298,17 @@ impl EnhancedMarketplace {
         current_price: f64,
     ) -> Result<(), String> {
         let mut performances = self.signal_performance.lock().await;
-        
+
         if let Some(perf) = performances.get_mut(signal_id) {
             perf.current_price = current_price;
             perf.highest_price = perf.highest_price.max(current_price);
             perf.lowest_price = perf.lowest_price.min(current_price);
-            
+
             if let Some(exit) = perf.exit_price {
                 perf.profit_loss_pct = ((exit - perf.entry_price) / perf.entry_price) * 100.0;
             } else {
-                perf.profit_loss_pct = ((current_price - perf.entry_price) / perf.entry_price) * 100.0;
+                perf.profit_loss_pct =
+                    ((current_price - perf.entry_price) / perf.entry_price) * 100.0;
             }
         }
 
@@ -320,7 +322,7 @@ impl EnhancedMarketplace {
         exit_price: f64,
     ) -> Result<SignalPerformance, String> {
         let mut performances = self.signal_performance.lock().await;
-        
+
         let perf = performances
             .get_mut(signal_id)
             .ok_or_else(|| "Signal performance not found".to_string())?;
@@ -329,7 +331,7 @@ impl EnhancedMarketplace {
         perf.current_price = exit_price;
         perf.closed_at = Some(Utc::now().timestamp());
         perf.profit_loss_pct = ((exit_price - perf.entry_price) / perf.entry_price) * 100.0;
-        
+
         if let Some(filled_at) = perf.filled_at {
             perf.duration_seconds = Some(Utc::now().timestamp() - filled_at);
         }
@@ -358,7 +360,7 @@ impl EnhancedMarketplace {
     /// Update leaderboard
     pub async fn update_leaderboard(&self) -> Result<(), String> {
         let mut leaderboard = self.leaderboard.lock().await;
-        
+
         // Get all providers from base marketplace
         let provider_ids = vec![
             "memecoin_monitor",
@@ -390,7 +392,10 @@ impl EnhancedMarketplace {
                 let subscriber_count = subscriptions
                     .values()
                     .flatten()
-                    .filter(|s| s.provider_id == provider_id && matches!(s.status, SubscriptionStatus::Active))
+                    .filter(|s| {
+                        s.provider_id == provider_id
+                            && matches!(s.status, SubscriptionStatus::Active)
+                    })
                     .count() as u32;
 
                 // Get average rating
@@ -422,7 +427,7 @@ impl EnhancedMarketplace {
 
         // Sort by reputation score
         entries.sort_by(|a, b| b.reputation_score.partial_cmp(&a.reputation_score).unwrap());
-        
+
         // Set ranks
         for (i, entry) in entries.iter_mut().enumerate() {
             entry.rank = (i + 1) as u32;
@@ -437,7 +442,10 @@ impl EnhancedMarketplace {
         // Update trending symbols
         self.update_trending_symbols(&mut leaderboard).await?;
 
-        log::info!("📊 Leaderboard updated with {} providers", leaderboard.top_providers.len());
+        log::info!(
+            "📊 Leaderboard updated with {} providers",
+            leaderboard.top_providers.len()
+        );
 
         Ok(())
     }
@@ -463,7 +471,7 @@ impl EnhancedMarketplace {
                 symbol: "".to_string(), // Would lookup from signal
                 profit_pct: p.profit_loss_pct,
                 confidence: 0.0, // Would lookup from signal
-                rating: 0.0, // Would lookup from ratings
+                rating: 0.0,     // Would lookup from ratings
                 timestamp: p.closed_at.unwrap_or(0),
             })
             .collect();
@@ -508,7 +516,7 @@ impl EnhancedMarketplace {
             .into_iter()
             .map(|(_, mut t)| {
                 t.avg_confidence /= t.signal_count as f64;
-                
+
                 if t.bullish_signals > t.bearish_signals * 2 {
                     t.sentiment = "BULLISH".to_string();
                 } else if t.bearish_signals > t.bullish_signals * 2 {
@@ -516,7 +524,7 @@ impl EnhancedMarketplace {
                 } else {
                     t.sentiment = "NEUTRAL".to_string();
                 }
-                
+
                 t
             })
             .collect();
@@ -552,17 +560,16 @@ impl EnhancedMarketplace {
                     false
                 }
             })
-            .count() as f64 * 15.0; // Avg signal price
+            .count() as f64
+            * 15.0; // Avg signal price
 
         let total_trades = performances
             .values()
             .filter(|p| matches!(p.status, PerformanceStatus::Won | PerformanceStatus::Lost))
             .count() as u32;
 
-        let avg_signal_price = active_signals
-            .iter()
-            .map(|s| s.price)
-            .sum::<f64>() / active_signals.len().max(1) as f64;
+        let avg_signal_price = active_signals.iter().map(|s| s.price).sum::<f64>()
+            / active_signals.len().max(1) as f64;
 
         MarketplaceStats {
             total_signals,
@@ -571,7 +578,7 @@ impl EnhancedMarketplace {
             total_trades,
             avg_signal_price,
             top_performing_provider: "memecoin_monitor".to_string(), // From leaderboard
-            most_traded_symbol: "SOL/USD".to_string(), // From trending
+            most_traded_symbol: "SOL/USD".to_string(),               // From trending
         }
     }
 
@@ -627,7 +634,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_subscription_creation() {
-        let marketplace = Arc::new(SignalMarketplace::new("https://api.mainnet-beta.solana.com".to_string()));
+        let marketplace = Arc::new(SignalMarketplace::new(
+            "https://api.mainnet-beta.solana.com".to_string(),
+        ));
         let enhanced = EnhancedMarketplace::new(marketplace);
 
         let sub = enhanced
@@ -642,11 +651,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_signal_rating() {
-        let marketplace = Arc::new(SignalMarketplace::new("https://api.mainnet-beta.solana.com".to_string()));
+        let marketplace = Arc::new(SignalMarketplace::new(
+            "https://api.mainnet-beta.solana.com".to_string(),
+        ));
         let enhanced = EnhancedMarketplace::new(marketplace);
 
         enhanced
-            .rate_signal("signal1", "user1", 5, Some("Great signal!".to_string()), Some(15.5))
+            .rate_signal(
+                "signal1",
+                "user1",
+                5,
+                Some("Great signal!".to_string()),
+                Some(15.5),
+            )
             .await
             .unwrap();
 
