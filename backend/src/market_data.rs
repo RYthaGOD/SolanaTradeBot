@@ -2,17 +2,15 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use solana_sdk::pubkey::Pubkey;
-use std::str::FromStr;
+use std::time::{SystemTime, UNIX_EPOCH};
+use serde::Deserialize;
 
-/// Real-time market data provider using Pyth Network
-/// Integrates with Pyth for primary price feeds and supports backup oracles
+/// Real-time market data provider using Pyth Network HTTP API
+/// NO FALLBACKS - Real data only, system fails if oracles unavailable
 pub struct MarketDataProvider {
-    rpc_client: Arc<tokio::sync::Mutex<super::solana_rpc::SolanaRpcClient>>,
     price_cache: Arc<RwLock<HashMap<String, PriceData>>>,
-    pyth_price_accounts: HashMap<String, Pubkey>,
-    switchboard_feeds: HashMap<String, Pubkey>,
-    enable_real_data: bool,
+    pyth_price_ids: HashMap<String, String>,
+    http_client: reqwest::Client,
 }
 
 /// Price data structure
@@ -26,77 +24,84 @@ pub struct PriceData {
     pub volume_24h: Option<f64>,
 }
 
-/// Price data source
+/// Price data source - NO SIMULATED DATA
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PriceSource {
-    Pyth,
-    Switchboard,
-    Simulated,
+    PythHTTP,
+    SwitchboardHTTP,
     Cache,
 }
 
 impl std::fmt::Display for PriceSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PriceSource::Pyth => write!(f, "Pyth"),
-            PriceSource::Switchboard => write!(f, "Switchboard"),
-            PriceSource::Simulated => write!(f, "Simulated"),
+            PriceSource::PythHTTP => write!(f, "Pyth-HTTP"),
+            PriceSource::SwitchboardHTTP => write!(f, "Switchboard-HTTP"),
             PriceSource::Cache => write!(f, "Cache"),
         }
     }
 }
 
+// Pyth HTTP API response structures
+#[derive(Debug, Deserialize)]
+struct PythHTTPResponse {
+    parsed: Vec<PythParsedPrice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PythParsedPrice {
+    id: String,
+    price: PythPriceData,
+}
+
+#[derive(Debug, Deserialize)]
+struct PythPriceData {
+    price: String,
+    conf: String,
+    expo: i32,
+    publish_time: i64,
+}
+
 impl MarketDataProvider {
-    /// Create new market data provider
-    pub fn new(
-        rpc_client: Arc<tokio::sync::Mutex<super::solana_rpc::SolanaRpcClient>>,
-        enable_real_data: bool,
-    ) -> Self {
-        log::info!("📊 Initializing Market Data Provider");
-        log::info!("📝 Real data enabled: {}", enable_real_data);
+    /// Create new market data provider - REAL DATA ONLY
+    pub fn new() -> Self {
+        log::info!("📊 Initializing Market Data Provider (REAL DATA ONLY - NO FALLBACKS)");
         
-        // Pyth price account addresses for common tokens
-        let mut pyth_price_accounts = HashMap::new();
+        // Pyth price feed IDs (from https://pyth.network/developers/price-feed-ids)
+        let mut pyth_price_ids = HashMap::new();
         
-        // Mainnet Pyth price feeds
-        pyth_price_accounts.insert(
+        // Mainnet Pyth price feed IDs
+        pyth_price_ids.insert(
             "SOL/USD".to_string(),
-            Pubkey::from_str("H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG").unwrap()
+            "0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d".to_string()
         );
-        pyth_price_accounts.insert(
+        pyth_price_ids.insert(
             "BTC/USD".to_string(),
-            Pubkey::from_str("GVXRSBjFk6e6J3NbVPXohDJetcTjaeeuykUpbQF8UoMU").unwrap()
+            "0xe62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43".to_string()
         );
-        pyth_price_accounts.insert(
+        pyth_price_ids.insert(
             "ETH/USD".to_string(),
-            Pubkey::from_str("JBu1AL4obBcCMqKBBxhpWCNUt136ijcuMZLFvTP7iWdB").unwrap()
+            "0xff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace".to_string()
         );
-        pyth_price_accounts.insert(
+        pyth_price_ids.insert(
             "USDC/USD".to_string(),
-            Pubkey::from_str("Gnt27xtC473ZT2Mw5u8wZ68Z3gULkSTb5DuxJy7eJotD").unwrap()
+            "0xeaa020c61cc479712813461ce153894a96a6c00b21ed0cfc2798d1f9a9e9c94a".to_string()
         );
         
-        // Switchboard V2 feed accounts (example addresses - replace with actual feeds)
-        let mut switchboard_feeds = HashMap::new();
-        switchboard_feeds.insert(
-            "SOL/USD".to_string(),
-            Pubkey::from_str("GvDMxPzN1sCj7L26YDK2HnMRXEQmQ2aemov8YBtPS7vR").unwrap()
-        );
-        switchboard_feeds.insert(
-            "BTC/USD".to_string(),
-            Pubkey::from_str("8SXvChNYFhRq4EZuZvnhjrB3jJRQCv4k3P4W6hesH3Ee").unwrap()
-        );
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("Failed to create HTTP client");
         
         Self {
-            rpc_client,
             price_cache: Arc::new(RwLock::new(HashMap::new())),
-            pyth_price_accounts,
-            switchboard_feeds,
-            enable_real_data,
+            pyth_price_ids,
+            http_client,
         }
     }
     
-    /// Get price for a symbol
+    /// Get price for a symbol - REAL DATA ONLY, NO FALLBACKS
+    /// System will fail if real data is unavailable
     pub async fn get_price(&self, symbol: &str) -> Result<PriceData> {
         // Check cache first
         {
@@ -111,134 +116,83 @@ impl MarketDataProvider {
             }
         }
         
-        // Fetch fresh price
-        if self.enable_real_data {
-            // Try Pyth first
-            match self.fetch_pyth_price(symbol).await {
-                Ok(price_data) => {
-                    // Update cache
-                    let mut cache = self.price_cache.write().await;
-                    cache.insert(symbol.to_string(), price_data.clone());
-                    super::monitoring::MARKET_DATA_UPDATES.inc();
-                    return Ok(price_data);
-                }
-                Err(e) => {
-                    log::warn!("⚠️ Pyth failed for {}: {}. Trying Switchboard...", symbol, e);
-                    super::monitoring::PRICE_ORACLE_ERRORS.inc();
-                    
-                    // Try Switchboard as backup
-                    match self.fetch_switchboard_price(symbol).await {
-                        Ok(price_data) => {
-                            let mut cache = self.price_cache.write().await;
-                            cache.insert(symbol.to_string(), price_data.clone());
-                            super::monitoring::MARKET_DATA_UPDATES.inc();
-                            return Ok(price_data);
-                        }
-                        Err(e2) => {
-                            log::warn!("⚠️ Switchboard also failed for {}: {}. Using simulated.", symbol, e2);
-                            super::monitoring::PRICE_ORACLE_ERRORS.inc();
-                            return self.get_simulated_price(symbol);
-                        }
-                    }
-                }
-            }
-        } else {
-            // Use simulated prices
-            return self.get_simulated_price(symbol);
-        }
-    }
-    
-    /// Fetch price from Pyth Network
-    async fn fetch_pyth_price(&self, symbol: &str) -> Result<PriceData> {
-        let price_account = self.pyth_price_accounts.get(symbol)
-            .ok_or_else(|| anyhow::anyhow!("No Pyth price feed for {}", symbol))?;
+        // Fetch fresh price from Pyth HTTP API - NO FALLBACKS
+        let price_data = self.fetch_pyth_http(symbol).await
+            .map_err(|e| anyhow::anyhow!("CRITICAL: Failed to fetch real price data for {}: {}. No fallbacks available.", symbol, e))?;
         
-        log::debug!("📊 Fetching Pyth price for {} from {}", symbol, price_account);
-        
-        // Get account data from RPC
-        let mut rpc = self.rpc_client.lock().await;
-        let accounts = rpc.get_multiple_accounts(&[*price_account]).await?;
-        
-        let account_data = accounts.first()
-            .and_then(|opt| opt.as_ref())
-            .ok_or_else(|| anyhow::anyhow!("Price account not found"))?;
-        
-        // Parse Pyth price feed data
-        // The account data contains the price feed information
-        // For now, return simulated data until we can properly parse the account
-        // TODO: Implement proper Pyth price feed parsing
-        log::warn!("⚠️ Pyth parsing not yet implemented, using simulated data");
-        
-        return self.get_simulated_price(symbol);
-        
-        // This is the proper implementation once we have the right account format:
-        // let price_feed = pyth_sdk_solana::PriceFeed::load(&account_data.data)?;
-        // let price_struct = price_feed.get_current_price().ok_or_else(|| anyhow::anyhow!("No current price"))?;
-        // let price = price_struct.price as f64 * 10_f64.powi(price_struct.expo);
-        // ...
-    }
-    
-    /// Fetch price from Switchboard Network (backup oracle)
-    async fn fetch_switchboard_price(&self, symbol: &str) -> Result<PriceData> {
-        let feed_account = self.switchboard_feeds.get(symbol)
-            .ok_or_else(|| anyhow::anyhow!("No Switchboard feed for {}", symbol))?;
-        
-        log::debug!("📊 Fetching Switchboard price for {} from {}", symbol, feed_account);
-        
-        // Get account data from RPC
-        let mut rpc = self.rpc_client.lock().await;
-        let accounts = rpc.get_multiple_accounts(&[*feed_account]).await?;
-        
-        let _account_data = accounts.first()
-            .and_then(|opt| opt.as_ref())
-            .ok_or_else(|| anyhow::anyhow!("Switchboard feed account not found"))?;
-        
-        // Parse Switchboard feed data
-        // TODO: Implement proper Switchboard feed parsing using switchboard-on-demand crate
-        log::warn!("⚠️ Switchboard parsing not yet implemented, using simulated data");
-        
-        let mut price_data = self.get_simulated_price(symbol)?;
-        price_data.source = PriceSource::Switchboard;
+        // Update cache
+        let mut cache = self.price_cache.write().await;
+        cache.insert(symbol.to_string(), price_data.clone());
+        super::monitoring::MARKET_DATA_UPDATES.inc();
         
         Ok(price_data)
-        
-        // Proper implementation would use:
-        // use switchboard_on_demand::PullFeedAccountData;
-        // let feed = PullFeedAccountData::parse(account_data)?;
-        // let price = feed.get_value(...)?;
     }
     
-    /// Get simulated price (for testing)
-    fn get_simulated_price(&self, symbol: &str) -> Result<PriceData> {
-        log::debug!("📊 Generating simulated price for {}", symbol);
+    /// Fetch price from Pyth HTTP API
+    async fn fetch_pyth_http(&self, symbol: &str) -> Result<PriceData> {
+        let price_id = self.pyth_price_ids.get(symbol)
+            .ok_or_else(|| anyhow::anyhow!("No Pyth price feed ID for {}", symbol))?;
         
-        let base_prices = HashMap::from([
-            ("SOL/USD", 100.0),
-            ("BTC/USD", 50000.0),
-            ("ETH/USD", 3000.0),
-            ("USDC/USD", 1.0),
-            ("SOL/USDC", 100.0),
-            ("BTC/USDC", 50000.0),
-            ("ETH/USDC", 3000.0),
-        ]);
+        log::debug!("📊 Fetching Pyth HTTP price for {} (ID: {})", symbol, price_id);
         
-        let base_price = base_prices.get(symbol).unwrap_or(&100.0);
+        // Use Pyth Hermes API (official HTTP endpoint)
+        let url = format!(
+            "https://hermes.pyth.network/v2/updates/price/latest?ids[]={}&encoding=hex",
+            price_id
+        );
         
-        // Add small random variation
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let variation = rng.gen_range(-0.02..0.02);
-        let price = base_price * (1.0 + variation);
+        let response = self.http_client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("HTTP request failed: {}", e))?;
+        
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("HTTP error: {}", response.status()));
+        }
+        
+        let pyth_response: PythHTTPResponse = response
+            .json()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
+        
+        let parsed_price = pyth_response.parsed.first()
+            .ok_or_else(|| anyhow::anyhow!("No price data in response"))?;
+        
+        // Parse price and confidence
+        let price_raw: i64 = parsed_price.price.price.parse()
+            .map_err(|e| anyhow::anyhow!("Failed to parse price: {}", e))?;
+        let conf_raw: u64 = parsed_price.price.conf.parse()
+            .map_err(|e| anyhow::anyhow!("Failed to parse confidence: {}", e))?;
+        
+        // Apply exponent
+        let price = (price_raw as f64) * 10_f64.powi(parsed_price.price.expo);
+        let confidence = (conf_raw as f64) * 10_f64.powi(parsed_price.price.expo);
+        
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        
+        // Check staleness (60 seconds max)
+        let age = current_time - parsed_price.price.publish_time;
+        if age > 60 {
+            return Err(anyhow::anyhow!("Price data too stale: {} seconds old", age));
+        }
+        
+        log::info!("✅ Pyth HTTP price for {}: ${:.2} ±${:.4} (age: {}s)", symbol, price, confidence, age);
         
         Ok(PriceData {
             symbol: symbol.to_string(),
             price,
-            confidence: price * 0.001, // 0.1% confidence interval
-            timestamp: chrono::Utc::now().timestamp(),
-            source: PriceSource::Simulated,
-            volume_24h: Some(rng.gen_range(1_000_000.0..10_000_000.0)),
+            confidence,
+            timestamp: parsed_price.price.publish_time,
+            source: PriceSource::PythHTTP,
+            volume_24h: None,
         })
     }
+    
+
     
     /// Get prices for multiple symbols
     pub async fn get_prices(&self, symbols: &[&str]) -> Result<Vec<PriceData>> {
@@ -297,15 +251,15 @@ impl MarketDataProvider {
         let mut stats = CacheStats {
             total_entries: cache.len(),
             pyth_prices: 0,
-            simulated_prices: 0,
+            switchboard_prices: 0,
             oldest_timestamp: i64::MAX,
             newest_timestamp: 0,
         };
         
         for price_data in cache.values() {
             match price_data.source {
-                PriceSource::Pyth => stats.pyth_prices += 1,
-                PriceSource::Simulated => stats.simulated_prices += 1,
+                PriceSource::PythHTTP => stats.pyth_prices += 1,
+                PriceSource::SwitchboardHTTP => stats.switchboard_prices += 1,
                 _ => {}
             }
             
@@ -321,7 +275,7 @@ impl MarketDataProvider {
 pub struct CacheStats {
     pub total_entries: usize,
     pub pyth_prices: usize,
-    pub simulated_prices: usize,
+    pub switchboard_prices: usize,
     pub oldest_timestamp: i64,
     pub newest_timestamp: i64,
 }

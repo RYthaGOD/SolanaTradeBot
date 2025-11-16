@@ -128,13 +128,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     log::info!("🔷 DEX Executor initialized (real trading: {})", config.trading.enable_trading);
     
-    // Initialize Market Data Provider (Phase 3)
-    let market_data_provider = Arc::new(market_data::MarketDataProvider::new(
-        solana_rpc.clone(),
-        !config.trading.enable_paper_trading, // Enable real data if not paper trading
-    ));
+    // Initialize Market Data Provider - REAL DATA ONLY
+    let market_data_provider = Arc::new(market_data::MarketDataProvider::new());
     
-    log::info!("📊 Market Data Provider initialized");
+    log::info!("📊 Market Data Provider initialized (REAL DATA ONLY - NO SIMULATED FALLBACKS)");
     
     // Start price feed manager for continuous updates
     let price_feed_manager = market_data::PriceFeedManager::new(
