@@ -527,6 +527,99 @@ a {
   color: var(--gold);
 }
 
+.mobula-card .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.mobula-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.mobula-token-card {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.token-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.token-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.token-metrics strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.mobula-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+}
+
+.section-subtitle {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+}
+
+.opportunity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.opportunity-card {
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.opportunity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.score-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(245, 197, 106, 0.15);
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.signal-list {
+  margin-top: 12px;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 @keyframes pulse {
   0% {
     opacity: 0.4;

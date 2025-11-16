@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { httpJson } from '../utils/http'
+import MobulaInsights from './MobulaInsights'
 
 interface PerformanceData {
   total_return: number
@@ -109,31 +110,33 @@ export default function Dashboard() {
         </table>
       </div>
 
-      <div className="card">
-        <h3>Quick Stats</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Sharpe Ratio</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.sharpe_ratio.toFixed(2) || '0.00'}</p>
-          </div>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Max Drawdown</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#c62828' }}>
-              {performance?.max_drawdown.toFixed(2) || '0.00'}%
-            </p>
-          </div>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Total Trades</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.trade_count || 0}</p>
-          </div>
-          <div>
-            <p style={{ color: '#666', marginBottom: '8px' }}>Daily P&L</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: performance && performance.daily_pnl >= 0 ? '#2e7d32' : '#c62828' }}>
-              ${performance?.daily_pnl.toFixed(2) || '0.00'}
-            </p>
+        <div className="card">
+          <h3>Quick Stats</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Sharpe Ratio</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.sharpe_ratio.toFixed(2) || '0.00'}</p>
+            </div>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Max Drawdown</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#c62828' }}>
+                {performance?.max_drawdown.toFixed(2) || '0.00'}%
+              </p>
+            </div>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Total Trades</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{performance?.trade_count || 0}</p>
+            </div>
+            <div>
+              <p style={{ color: '#666', marginBottom: '8px' }}>Daily P&L</p>
+              <p style={{ fontSize: '1.5rem', fontWeight: 'bold', color: performance && performance.daily_pnl >= 0 ? '#2e7d32' : '#c62828' }}>
+                ${performance?.daily_pnl.toFixed(2) || '0.00'}
+              </p>
+            </div>
           </div>
         </div>
-      </div>
+
+        <MobulaInsights />
     </div>
   )
 }

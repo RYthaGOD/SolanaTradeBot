@@ -506,6 +506,31 @@ pub async fn start_server(
             })
     };
 
+    let dex_trending_route = {
+        let dex_screener = dex_screener_client.clone();
+
+        warp::path!("dex" / "trending")
+            .and(warp::get())
+            .and_then(move || {
+                let dex_screener = dex_screener.clone();
+
+                async move {
+                    match dex_screener.find_trending_solana_tokens(5000.0).await {
+                        Ok(pairs) => Ok::<_, warp::Rejection>(warp::reply::json(
+                            &ApiResponse::new(pairs, "Trending Solana tokens retrieved"),
+                        )),
+                        Err(e) => {
+                            log::error!("Mobula trending error: {}", e);
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                Vec::<crate::dex_screener::TokenPair>::new(),
+                                &format!("Failed to fetch trending tokens: {}", e),
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+
     let dex_opportunities_route = {
         let dex_screener = dex_screener_client.clone();
 
@@ -1128,6 +1153,7 @@ pub async fn start_server(
         .or(oracle_price_route)
         .or(oracle_feeds_route)
         .or(dex_search_route)
+        .or(dex_trending_route)
         .or(dex_opportunities_route)
         .or(pumpfun_launches_route)
         .or(pumpfun_signals_route)
