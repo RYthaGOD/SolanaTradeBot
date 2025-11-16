@@ -42,20 +42,20 @@ impl std::fmt::Display for PriceSource {
     }
 }
 
-// Pyth HTTP API response structures
+// Pyth HTTP API response structures (matching official Hermes API schema)
 #[derive(Debug, Deserialize)]
 struct PythHTTPResponse {
-    parsed: Vec<PythParsedPrice>,
+    parsed: Option<Vec<PythParsedPrice>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct PythParsedPrice {
     id: String,
-    price: PythPriceData,
+    price: PythPriceInfo,
 }
 
 #[derive(Debug, Deserialize)]
-struct PythPriceData {
+struct PythPriceInfo {
     price: String,
     conf: String,
     expo: i32,
@@ -128,46 +128,70 @@ impl MarketDataProvider {
         Ok(price_data)
     }
     
-    /// Fetch price from Pyth HTTP API
+    /// Fetch price from Pyth HTTP API (Hermes endpoint)
     async fn fetch_pyth_http(&self, symbol: &str) -> Result<PriceData> {
         let price_id = self.pyth_price_ids.get(symbol)
             .ok_or_else(|| anyhow::anyhow!("No Pyth price feed ID for {}", symbol))?;
         
         log::debug!("📊 Fetching Pyth HTTP price for {} (ID: {})", symbol, price_id);
         
-        // Use Pyth Hermes API (official HTTP endpoint)
+        // Use Pyth Hermes API v2 (official HTTP endpoint)
+        // Format: https://hermes.pyth.network/v2/updates/price/latest?ids[]={id}&parsed=true
         let url = format!(
-            "https://hermes.pyth.network/v2/updates/price/latest?ids[]={}&encoding=hex",
+            "https://hermes.pyth.network/v2/updates/price/latest?ids[]={}&parsed=true",
             price_id
         );
         
+        log::debug!("🌐 Requesting: {}", url);
+        
         let response = self.http_client
             .get(&url)
+            .header("Accept", "application/json")
             .send()
             .await
-            .map_err(|e| anyhow::anyhow!("HTTP request failed: {}", e))?;
+            .map_err(|e| {
+                log::error!("❌ HTTP request failed for {}: {}", symbol, e);
+                anyhow::anyhow!("Network error: {}. Ensure internet access to hermes.pyth.network", e)
+            })?;
         
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!("HTTP error: {}", response.status()));
+        let status = response.status();
+        if !status.is_success() {
+            let error_body = response.text().await.unwrap_or_else(|_| "Unable to read error body".to_string());
+            log::error!("❌ Pyth API error for {}: {} - {}", symbol, status, error_body);
+            return Err(anyhow::anyhow!("Pyth API returned error {}: {}", status, error_body));
         }
         
-        let pyth_response: PythHTTPResponse = response
-            .json()
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
+        let response_text = response.text().await
+            .map_err(|e| anyhow::anyhow!("Failed to read response: {}", e))?;
         
-        let parsed_price = pyth_response.parsed.first()
-            .ok_or_else(|| anyhow::anyhow!("No price data in response"))?;
+        log::debug!("📦 Response body: {}", response_text);
         
-        // Parse price and confidence
+        let pyth_response: PythHTTPResponse = serde_json::from_str(&response_text)
+            .map_err(|e| {
+                log::error!("❌ JSON parse error for {}: {} | Response: {}", symbol, e, response_text);
+                anyhow::anyhow!("Failed to parse Pyth response: {}", e)
+            })?;
+        
+        let parsed_prices = pyth_response.parsed
+            .ok_or_else(|| anyhow::anyhow!("No 'parsed' field in Pyth response"))?;
+        
+        let parsed_price = parsed_prices.first()
+            .ok_or_else(|| anyhow::anyhow!("Empty parsed prices array in response"))?;
+        
+        // Parse price and confidence (hex strings from Pyth)
         let price_raw: i64 = parsed_price.price.price.parse()
-            .map_err(|e| anyhow::anyhow!("Failed to parse price: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse price value '{}': {}", parsed_price.price.price, e))?;
         let conf_raw: u64 = parsed_price.price.conf.parse()
-            .map_err(|e| anyhow::anyhow!("Failed to parse confidence: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to parse confidence value '{}': {}", parsed_price.price.conf, e))?;
         
-        // Apply exponent
+        // Apply exponent to convert to decimal
         let price = (price_raw as f64) * 10_f64.powi(parsed_price.price.expo);
         let confidence = (conf_raw as f64) * 10_f64.powi(parsed_price.price.expo);
+        
+        // Validate price is reasonable
+        if !price.is_finite() || price <= 0.0 {
+            return Err(anyhow::anyhow!("Invalid price value: {}", price));
+        }
         
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -177,7 +201,8 @@ impl MarketDataProvider {
         // Check staleness (60 seconds max)
         let age = current_time - parsed_price.price.publish_time;
         if age > 60 {
-            return Err(anyhow::anyhow!("Price data too stale: {} seconds old", age));
+            log::warn!("⚠️ Price data is stale for {}: {} seconds old", symbol, age);
+            return Err(anyhow::anyhow!("Price data too stale: {} seconds old (max 60s)", age));
         }
         
         log::info!("✅ Pyth HTTP price for {}: ${:.2} ±${:.4} (age: {}s)", symbol, price, confidence, age);
