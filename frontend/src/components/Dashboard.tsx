@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { API_BASE_URL } from '../config'
 
 interface PerformanceData {
   total_return: number
@@ -35,8 +35,8 @@ export default function Dashboard() {
   const fetchData = async () => {
     try {
       const [perfRes, marketRes] = await Promise.all([
-        axios.get('http://localhost:8080/performance'),
-        axios.get('http://localhost:8080/market-data')
+        axios.get(`${API_BASE_URL}/performance`),
+        axios.get(`${API_BASE_URL}/market-data`)
       ])
 
       if (perfRes.data.success) {

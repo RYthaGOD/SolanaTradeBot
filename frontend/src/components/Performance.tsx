@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import { API_BASE_URL } from '../config'
 
 interface PerformanceMetrics {
   total_return: number
@@ -26,7 +27,7 @@ export default function Performance() {
 
   const fetchPerformance = async () => {
     try {
-      const response = await axios.get('http://localhost:8080/performance')
+      const response = await axios.get(`${API_BASE_URL}/performance`)
       if (response.data.success) {
         setMetrics(response.data.data)
       }

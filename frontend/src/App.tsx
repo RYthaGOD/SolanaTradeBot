@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Dashboard from './components/Dashboard'
 import TradingView from './components/TradingView'
 import Portfolio from './components/Portfolio'

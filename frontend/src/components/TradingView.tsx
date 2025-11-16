@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import { API_BASE_URL } from '../config'
 
 interface TradingSignal {
   symbol: string
@@ -22,7 +23,7 @@ export default function TradingView() {
 
   const fetchSignals = async () => {
     try {
-      const response = await axios.get('http://localhost:8080/signals')
+      const response = await axios.get(`${API_BASE_URL}/signals`)
       if (response.data.success) {
         setSignals(response.data.data)
       }

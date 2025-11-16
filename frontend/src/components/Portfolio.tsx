@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import { API_BASE_URL } from '../config'
 
 interface PortfolioData {
   positions: Record<string, number>
@@ -25,7 +26,7 @@ export default function Portfolio() {
 
   const fetchPortfolio = async () => {
     try {
-      const response = await axios.get('http://localhost:8080/portfolio')
+      const response = await axios.get(`${API_BASE_URL}/portfolio`)
       if (response.data.success) {
         setPortfolio(response.data.data)
       }
@@ -122,7 +123,7 @@ export default function Portfolio() {
                   fill="#8884d8"
                   dataKey="value"
                 >
-                  {chartData.map((entry, index) => (
+                  {chartData.map((_entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
