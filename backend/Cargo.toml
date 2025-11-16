@@ -4,19 +4,64 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+# Core async runtime
 tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# Web framework
 warp = "0.3"
 futures = "0.3"
+
+# HTTP client
 reqwest = { version = "0.11", features = ["json"] }
+
+# WebSocket
 tokio-tungstenite = "0.20"
 tungstenite = "0.20"
+
+# Encoding
 base64 = "0.21"
 hex = "0.4"
+
+# Random number generation
 rand = "0.8"
+
+# Time handling
 chrono = { version = "0.4", features = ["serde"] }
+
+# UUID generation
 uuid = { version = "1.0", features = ["v4"] }
+
+# Async traits
 async-trait = "0.1"
+
+# Logging
 log = "0.4"
 pretty_env_logger = "0.5"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Environment variables
+dotenv = "0.15"
+config = "0.13"
+
+# Solana SDK
+solana-client = "1.18"
+solana-sdk = "1.18"
+solana-transaction-status = "1.18"
+
+# Security & Key Management
+ring = "0.17"
+bip39 = "2.0"
+argon2 = "0.5"
+
+# Monitoring & Metrics
+prometheus = "0.13"
+lazy_static = "1.4"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"

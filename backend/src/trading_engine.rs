@@ -42,6 +42,7 @@ pub struct TradingEngine {
     pub initial_balance: f64,
     pub current_balance: f64,
     pub trade_history: Vec<TradingSignal>,
+    pub ml_predictor: super::ml_models::TradingPredictor,
 }
 
 impl TradingEngine {
@@ -52,10 +53,11 @@ impl TradingEngine {
             initial_balance: 10000.0,
             current_balance: 10000.0,
             trade_history: Vec::new(),
+            ml_predictor: super::ml_models::TradingPredictor::new(),
         }
     }
     
-    pub fn process_market_data(&mut self, data: MarketData) -> Option<TradingSignal> {
+    pub async fn process_market_data(&mut self, data: MarketData) -> Option<TradingSignal> {
         let symbol_data = self.market_state
             .entry(data.symbol.clone())
             .or_insert_with(|| VecDeque::with_capacity(100));
@@ -70,14 +72,21 @@ impl TradingEngine {
             let sma_10: f64 = prices[prices.len()-10..].iter().sum::<f64>() / 10.0;
             let sma_20: f64 = prices.iter().sum::<f64>() / prices.len() as f64;
             
+            // Generate ML features and get prediction
+            let features = self.ml_predictor.generate_features(&data);
+            let (ml_confidence, _price_change) = self.ml_predictor.predict(&features).await;
+            
+            // Combine technical analysis with ML prediction
+            let combined_confidence = (ml_confidence + 0.7) / 2.0; // Average ML and fixed confidence
+            
             if sma_10 > sma_20 * 1.02 && self.current_balance > data.price {
                 let signal = TradingSignal {
                     id: uuid::Uuid::new_v4().to_string(),
                     action: TradeAction::Buy,
                     symbol: data.symbol.clone(),
                     price: data.price,
-                    confidence: 0.7,
-                    size: self.calculate_position_size(0.7, data.price),
+                    confidence: combined_confidence,
+                    size: self.calculate_position_size(combined_confidence, data.price),
                     stop_loss: data.price * 0.95,
                     take_profit: data.price * 1.05,
                     timestamp: Utc::now().timestamp(),
@@ -92,8 +101,8 @@ impl TradingEngine {
                             action: TradeAction::Sell,
                             symbol: data.symbol.clone(),
                             price: data.price,
-                            confidence: 0.6,
-                            size: position.min(self.calculate_position_size(0.6, data.price)),
+                            confidence: combined_confidence,
+                            size: position.min(self.calculate_position_size(combined_confidence, data.price)),
                             stop_loss: data.price * 1.05,
                             take_profit: data.price * 0.95,
                             timestamp: Utc::now().timestamp(),
@@ -168,15 +177,84 @@ impl TradingEngine {
 }
 
 pub async fn generate_trading_signals(
-    _engine: Arc<Mutex<TradingEngine>>,
-    _risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
+    engine: Arc<Mutex<TradingEngine>>,
+    risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
+    _solana_client: Arc<Mutex<super::solana_integration::SolanaClient>>,
+    alert_manager: Arc<super::monitoring::AlertManager>,
 ) {
-    log::info!("🤖 Starting trading signal generation");
+    log::info!("🤖 Starting trading signal generation and execution");
     
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+    let mut last_signal_count = 0;
     
     loop {
         interval.tick().await;
-        log::debug!("🔍 Generating trading signals...");
+        
+        // Get pending signals from trade history
+        let (signals, current_count) = {
+            let engine_lock = engine.lock().await;
+            let count = engine_lock.trade_history.len();
+            let signals = engine_lock.trade_history.iter().rev().take(1).cloned().collect::<Vec<_>>();
+            (signals, count)
+        };
+        
+        // Only process new signals
+        if current_count <= last_signal_count {
+            continue;
+        }
+        last_signal_count = current_count;
+        
+        for signal in signals {
+            super::monitoring::SIGNALS_GENERATED.inc();
+            
+            // Validate trade with risk manager
+            let is_valid = {
+                let risk_lock = risk_manager.lock().await;
+                risk_lock.validate_trade(&signal.symbol, signal.size, signal.price, signal.confidence)
+            };
+            
+            if is_valid {
+                // Execute the trade
+                let executed = {
+                    let mut engine_lock = engine.lock().await;
+                    engine_lock.execute_trade(&signal)
+                };
+                
+                if executed {
+                    super::monitoring::SIGNALS_EXECUTED.inc();
+                    log::info!("✅ Trade executed and validated by risk manager");
+                    
+                    // Send alert for executed trade
+                    alert_manager.send_alert(super::monitoring::Alert::new(
+                        super::monitoring::AlertLevel::Info,
+                        "Trade Executed",
+                        format!("{:?} {} {} @ ${:.2}", signal.action, signal.size, signal.symbol, signal.price)
+                    )).await;
+                    
+                    // Record the trade in risk manager
+                    let pnl = match signal.action {
+                        TradeAction::Buy => -signal.size * signal.price * 0.001, // Small cost
+                        TradeAction::Sell => signal.size * signal.price * 0.001,  // Small gain
+                        TradeAction::Hold => 0.0,
+                    };
+                    
+                    let trade = super::risk_management::Trade {
+                        id: signal.id.clone(),
+                        symbol: signal.symbol.clone(),
+                        action: format!("{:?}", signal.action),
+                        size: signal.size,
+                        price: signal.price,
+                        timestamp: signal.timestamp,
+                        pnl,
+                    };
+                    
+                    let mut risk_lock = risk_manager.lock().await;
+                    risk_lock.record_trade(trade);
+                }
+            } else {
+                super::monitoring::SIGNALS_REJECTED.inc();
+                log::warn!("❌ Trade rejected by risk manager: {} {:?}", signal.symbol, signal.action);
+            }
+        }
     }
 }

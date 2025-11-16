@@ -1,6 +1,6 @@
 use warp::Filter;
 use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -24,8 +24,10 @@ impl<T> ApiResponse<T> {
 pub async fn start_server(
     engine: Arc<Mutex<super::trading_engine::TradingEngine>>,
     risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
+    _solana_client: Arc<Mutex<super::solana_integration::SolanaClient>>,
+    config: super::config::ApiConfig,
 ) {
-    log::info!("🌐 Starting Warp server on :8080");
+    log::info!("🌐 Starting Warp server on {}:{}", config.host, config.port);
     
     let cors = warp::cors()
         .allow_any_origin()
@@ -171,7 +173,11 @@ pub async fn start_server(
         .with(cors)
         .with(warp::log("api"));
     
+    let addr: std::net::SocketAddr = format!("{}:{}", config.host, config.port)
+        .parse()
+        .expect("Invalid address");
+    
     warp::serve(routes)
-        .run(([0, 0, 0, 0], 8080))
+        .run(addr)
         .await;
 }
