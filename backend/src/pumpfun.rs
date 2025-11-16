@@ -1,4 +1,4 @@
-//! PumpFun memecoin monitoring and analysis
+//! PumpFun memecoin monitoring and analysis with Moralis price enrichment
 //! Integrated into AI orchestrator for memecoin opportunity detection
 
 use chrono::Utc;
@@ -63,51 +63,143 @@ pub struct MemeTradeSignal {
     pub timestamp: i64,
 }
 
-/// PumpFun API client
+/// PumpFun API client with Moralis integration for real token prices
+/// Moralis API docs: https://docs.moralis.com/web3-data-api/solana/tutorials/get-pump-fun-token-prices
 pub struct PumpFunClient {
     api_url: String,
+    moralis_api_url: String,
+    moralis_api_key: Option<String>,
     client: reqwest::Client,
 }
 
 impl PumpFunClient {
     pub fn new() -> Self {
+        let moralis_api_key = std::env::var("MORALIS_API_KEY").ok();
+
+        if moralis_api_key.is_some() {
+            log::info!("✅ Moralis API key loaded for pump.fun token price data");
+        } else {
+            log::warn!("⚠️ Moralis API key not found. Token prices will be simulated.");
+            log::info!("   Set MORALIS_API_KEY environment variable to enable real price data");
+            log::info!("   Get your API key from: https://admin.moralis.com/");
+        }
+
         Self {
-            // Note: This is a placeholder URL. PumpFun may have different API endpoints
             api_url: "https://frontend-api.pump.fun".to_string(),
+            moralis_api_url: "https://solana-gateway.moralis.io/token/mainnet".to_string(),
+            moralis_api_key,
             client: reqwest::Client::new(),
         }
     }
 
-    /// Get recently created tokens on PumpFun
-    pub async fn get_recent_launches(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
+    /// Get recently created tokens on PumpFun with real-time price data from Moralis
+    pub async fn get_recent_launches(&self, limit: usize) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
         log::debug!("Fetching recent launches from PumpFun");
 
-        // Since PumpFun API may require authentication or have rate limits,
-        // we'll simulate data for now. In production, implement actual API calls.
-        let simulated_launches = self.simulate_recent_launches(limit);
+        let mut launches = self.simulate_recent_launches(limit);
 
-        Ok(simulated_launches)
+        if self.moralis_api_key.is_some() {
+            log::info!("🔄 Enriching launches with real-time price data from Moralis...");
+            for launch in &mut launches {
+                match self.get_token_price_from_moralis(&launch.mint).await {
+                    Ok(Some(price_data)) => {
+                        let estimated_supply = 1_000_000_000.0;
+                        launch.market_cap = price_data.usd_price * estimated_supply;
+                        if !price_data.pair_address.is_empty() {
+                            launch.bonding_curve = price_data.pair_address.clone();
+                        }
+                        log::debug!(
+                            "✅ Updated {} with real price: ${:.6} on {}",
+                            launch.symbol, price_data.usd_price, price_data.exchange_name
+                        );
+                    }
+                    Ok(None) => {
+                        log::debug!("No price data available for {}", launch.mint);
+                    }
+                    Err(e) => {
+                        log::debug!("Could not fetch price for {}: {}", launch.mint, e);
+                    }
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            }
+            log::info!("✅ Enriched {} launches with real-time price data", launches.len());
+        }
+
+        Ok(launches)
     }
 
-    /// Get token details by mint address
-    pub async fn get_token_details(
-        &self,
-        mint: &str,
-    ) -> Result<Option<TokenLaunch>, Box<dyn Error>> {
+    /// Get token details by mint address using Moralis API
+    pub async fn get_token_details(&self, mint: &str) -> Result<Option<TokenLaunch>, Box<dyn Error>> {
         log::debug!("Fetching token details for: {}", mint);
 
-        // Simulate token details
-        Ok(None) // In production, fetch from API
+        if let Some(_) = &self.moralis_api_key {
+            match self.get_token_price_from_moralis(mint).await {
+                Ok(Some(price_data)) => {
+                    log::info!(
+                        "✅ Got real-time price data from Moralis for token: {} ({} ${:.6})",
+                        mint, price_data.exchange_name, price_data.usd_price
+                    );
+                    let estimated_supply = 1_000_000_000.0;
+                    let market_cap = price_data.usd_price * estimated_supply;
+                    return Ok(Some(TokenLaunch {
+                        mint: mint.to_string(),
+                        name: format!("Token ({})", price_data.exchange_name),
+                        symbol: mint.chars().take(8).collect::<String>().to_uppercase(),
+                        uri: format!("https://pump.fun/{}", mint),
+                        creator: price_data.exchange_address.clone(),
+                        created_timestamp: chrono::Utc::now().timestamp(),
+                        market_cap,
+                        reply_count: if market_cap > 10_000.0 { 50 } else { 10 },
+                        is_currently_live: true,
+                        king_of_the_hill_timestamp: None,
+                        bonding_curve: price_data.pair_address.clone(),
+                    }));
+                }
+                Ok(None) => log::debug!("No price data found for token: {}", mint),
+                Err(e) => log::warn!("Failed to fetch price from Moralis: {}", e),
+            }
+        }
+
+        Ok(None)
     }
 
-    /// Simulate recent launches for development
+    /// Get token price from Moralis API
+    pub async fn get_token_price_from_moralis(
+        &self,
+        token_address: &str,
+    ) -> Result<Option<MoralisTokenPrice>, Box<dyn Error>> {
+        if self.moralis_api_key.is_none() {
+            return Err("Moralis API key required. Set MORALIS_API_KEY environment variable.".into());
+        }
+
+        let url = format!("{}/{}/price", self.moralis_api_url, token_address);
+        let response = self
+            .client
+            .get(&url)
+            .header("X-API-Key", self.moralis_api_key.as_ref().unwrap())
+            .header("accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("Network error: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            if status == 404 {
+                return Ok(None);
+            }
+            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Moralis API error {}: {}", status, error_text).into());
+        }
+
+        let price_data: MoralisTokenPrice =
+            response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+
+        Ok(Some(price_data))
+    }
+
     fn simulate_recent_launches(&self, limit: usize) -> Vec<TokenLaunch> {
         let mut launches = Vec::new();
         let base_timestamp = Utc::now().timestamp();
-
         let meme_names = [
             ("DOGE2", "Doge 2.0"),
             ("PEPE", "Pepe Coin"),
@@ -121,7 +213,7 @@ impl PumpFunClient {
 
         for i in 0..limit.min(meme_names.len()) {
             let (symbol, name) = meme_names[i % meme_names.len()];
-            let timestamp = base_timestamp - (i as i64 * 300); // 5 min apart
+            let timestamp = base_timestamp - (i as i64 * 300);
 
             launches.push(TokenLaunch {
                 mint: format!(
@@ -138,8 +230,8 @@ impl PumpFunClient {
                     &hex::encode(&rand::random::<[u8; 4]>())
                 ),
                 created_timestamp: timestamp,
-                market_cap: 10000.0 + rand::random::<f64>() * 100000.0,
-                reply_count: (rand::random::<u32>() % 100),
+                market_cap: 10_000.0 + rand::random::<f64>() * 100_000.0,
+                reply_count: rand::random::<u32>() % 100,
                 is_currently_live: rand::random::<f64>() > 0.3,
                 king_of_the_hill_timestamp: None,
                 bonding_curve: format!("bonding_curve_{}", i),
@@ -149,12 +241,10 @@ impl PumpFunClient {
         launches
     }
 
-    /// Analyze meme coin sentiment
     pub fn analyze_sentiment(&self, launch: &TokenLaunch) -> MemeSentiment {
         let mut sentiment_score = 0.0;
         let mut social_signals = Vec::new();
 
-        // Analyze reply count (engagement)
         if launch.reply_count > 50 {
             sentiment_score += 20.0;
             social_signals.push("High engagement".to_string());
@@ -163,22 +253,19 @@ impl PumpFunClient {
             social_signals.push("Medium engagement".to_string());
         }
 
-        // Analyze if currently live
         if launch.is_currently_live {
             sentiment_score += 15.0;
             social_signals.push("Currently live".to_string());
         }
 
-        // Analyze market cap
-        if launch.market_cap > 50000.0 {
+        if launch.market_cap > 50_000.0 {
             sentiment_score += 25.0;
             social_signals.push("Strong market cap".to_string());
-        } else if launch.market_cap > 20000.0 {
+        } else if launch.market_cap > 20_000.0 {
             sentiment_score += 10.0;
             social_signals.push("Growing market cap".to_string());
         }
 
-        // Time since launch
         let age_hours = (Utc::now().timestamp() - launch.created_timestamp) / 3600;
         if age_hours < 1 {
             sentiment_score += 20.0;
@@ -188,7 +275,6 @@ impl PumpFunClient {
             social_signals.push("Recent launch".to_string());
         }
 
-        // Determine hype level
         let hype_level = if sentiment_score >= 70.0 {
             HypeLevel::Extreme
         } else if sentiment_score >= 50.0 {
@@ -199,12 +285,11 @@ impl PumpFunClient {
             HypeLevel::Low
         };
 
-        // Determine risk level (inversely related to market cap and age)
-        let risk_level = if launch.market_cap < 10000.0 || age_hours < 1 {
+        let risk_level = if launch.market_cap < 10_000.0 || age_hours < 1 {
             RiskLevel::Extreme
-        } else if launch.market_cap < 30000.0 || age_hours < 3 {
+        } else if launch.market_cap < 30,000.0 || age_hours < 3 {
             RiskLevel::High
-        } else if launch.market_cap < 50000.0 {
+        } else if launch.market_cap < 50_000.0 {
             RiskLevel::Medium
         } else {
             RiskLevel::Low
@@ -220,46 +305,38 @@ impl PumpFunClient {
         }
     }
 
-    /// Generate trading signals for meme coins
     pub async fn generate_meme_signals(&self, launches: Vec<TokenLaunch>) -> Vec<MemeTradeSignal> {
         let mut signals = Vec::new();
 
         for launch in launches {
             let sentiment = self.analyze_sentiment(&launch);
 
-            // Only generate signals for tokens with positive sentiment
             if sentiment.sentiment_score > 40.0 {
                 let mut reasons = Vec::new();
                 let action: String;
                 let confidence: f64;
 
-                // Strong buy signal
-                if sentiment.sentiment_score > 70.0 && launch.market_cap > 30000.0 {
+                if sentiment.sentiment_score > 70.0 && launch.market_cap > 30_000.0 {
                     action = "BUY".to_string();
                     confidence = 0.75;
                     reasons.push("Extremely high sentiment".to_string());
                     reasons.push("Strong community backing".to_string());
                     reasons.extend(sentiment.social_signals.clone());
-                }
-                // Moderate buy signal
-                else if sentiment.sentiment_score > 50.0 {
+                } else if sentiment.sentiment_score > 50.0 {
                     action = "BUY".to_string();
                     confidence = 0.60;
                     reasons.push("Good sentiment".to_string());
                     reasons.extend(sentiment.social_signals.clone());
-                }
-                // Weak buy signal
-                else {
+                } else {
                     action = "HOLD".to_string();
                     confidence = 0.45;
                     reasons.push("Moderate sentiment".to_string());
                     reasons.push("Monitor for better entry".to_string());
                 }
 
-                // Estimate prices (simplified)
-                let entry_price = launch.market_cap / 1000000.0; // Simplified price calculation
+                let entry_price = launch.market_cap / 1_000_000.0;
                 let target_price = entry_price * (1.0 + confidence);
-                let stop_loss = entry_price * 0.85; // 15% stop loss
+                let stop_loss = entry_price * 0.85;
 
                 signals.push(MemeTradeSignal {
                     token_address: launch.mint.clone(),
@@ -276,27 +353,40 @@ impl PumpFunClient {
             }
         }
 
-        // Sort by confidence
         signals.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
-
         log::info!("Generated {} meme coin trading signals", signals.len());
-
         signals
     }
 
-    /// Get top meme coin opportunities
-    pub async fn get_top_opportunities(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
+    pub async fn get_top_opportunities(&self, limit: usize) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
         let launches = self.get_recent_launches(limit * 2).await?;
         let mut signals = self.generate_meme_signals(launches).await;
         signals.truncate(limit);
         Ok(signals)
     }
+
+    pub async fn is_safe_to_trade_with_price(&self, token_address: &str) -> Result<bool, Box<dyn Error>> {
+        if self.moralis_api_key.is_none() {
+            log::warn!("Cannot validate token safety without Moralis API key");
+            return Ok(false);
+        }
+
+        match self.get_token_price_from_moralis(token_address).await {
+            Ok(Some(price_data)) => {
+                let is_safe = price_data.usd_price > 0.0
+                    && !price_data.exchange_name.is_empty()
+                    && !price_data.pair_address.is_empty();
+                Ok(is_safe)
+            }
+            Ok(None) => Ok(false),
+            Err(e) => {
+                log::warn!("Failed to check token safety: {}", e);
+                Err(e)
+            }
+        }
+    }
 }
 
-/// Meme coin analyzer for advanced analysis
 pub struct MemeAnalyzer {
     pumpfun: PumpFunClient,
 }
@@ -308,27 +398,54 @@ impl MemeAnalyzer {
         }
     }
 
-    /// Analyze multiple meme coins and rank them
-    pub async fn analyze_and_rank(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
+    pub async fn analyze_and_rank(&self, limit: usize) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
         self.pumpfun.get_top_opportunities(limit).await
     }
 
-    /// Check if a meme coin is safe to trade
     pub fn is_safe_to_trade(&self, sentiment: &MemeSentiment, _min_market_cap: f64) -> bool {
-        // Don't trade extreme risk or very low sentiment
-        matches!(sentiment.risk_level, RiskLevel::Low | RiskLevel::Medium)
-            && sentiment.sentiment_score > 40.0
+        matches!(sentiment.risk_level, RiskLevel::Low | RiskLevel::Medium) && sentiment.sentiment_score > 40.0
     }
 
-    /// Calculate position size for meme coin trade
     pub fn calculate_meme_position_size(&self, confidence: f64, account_balance: f64) -> f64 {
-        // Use smaller position sizes for meme coins due to higher risk
-        let max_position_pct = 0.05; // Max 5% per meme trade
+        let max_position_pct = 0.05;
         let size = account_balance * max_position_pct * confidence;
         size.min(account_balance * max_position_pct)
+    }
+}
+
+/// Moralis API token price response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoralisTokenPrice {
+    #[serde(rename = "tokenAddress")]
+    pub token_address: String,
+    #[serde(rename = "pairAddress")]
+    pub pair_address: String,
+    #[serde(rename = "exchangeName")]
+    pub exchange_name: String,
+    #[serde(rename = "exchangeAddress")]
+    pub exchange_address: String,
+    #[serde(rename = "nativePrice")]
+    pub native_price: MoralisNativePrice,
+    #[serde(rename = "usdPrice")]
+    pub usd_price: f64,
+}
+
+/// Native price information from Moralis API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoralisNativePrice {
+    pub value: String,
+    pub symbol: String,
+    pub name: String,
+    pub decimals: u8,
+}
+
+impl MoralisTokenPrice {
+    pub fn native_price_f64(&self) -> f64 {
+        self.native_price
+            .value
+            .parse::<f64>()
+            .unwrap_or(0.0)
+            / 10_f64.powi(self.native_price.decimals as i32)
     }
 }
 
@@ -360,7 +477,7 @@ mod tests {
             uri: "https://test.com".to_string(),
             creator: "creator".to_string(),
             created_timestamp: Utc::now().timestamp(),
-            market_cap: 50000.0,
+            market_cap: 50_000.0,
             reply_count: 60,
             is_currently_live: true,
             king_of_the_hill_timestamp: None,
@@ -375,8 +492,8 @@ mod tests {
     #[test]
     fn test_meme_analyzer_position_sizing() {
         let analyzer = MemeAnalyzer::new();
-        let position = analyzer.calculate_meme_position_size(0.7, 10000.0);
+        let position = analyzer.calculate_meme_position_size(0.7, 10_000.0);
         assert!(position > 0.0);
-        assert!(position <= 500.0); // Max 5% of 10000
+        assert!(position <= 500.0);
     }
 }
