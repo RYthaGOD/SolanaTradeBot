@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+
 
 #[derive(Debug, Clone)]
 pub struct TradingPredictor {
@@ -14,7 +14,7 @@ impl TradingPredictor {
     
     pub async fn predict(&self, features: &[f64]) -> (f64, f64) {
         let confidence = 0.5 + (features.iter().sum::<f64>().sin().abs() * 0.3);
-        let price_change = (features.iter().sum::<f64>().cos() * 0.02);
+        let price_change = features.iter().sum::<f64>().cos() * 0.02;
         
         (confidence.min(0.95).max(0.1), price_change)
     }

@@ -82,7 +82,7 @@ pub async fn simulate_market_data(engine: Arc<Mutex<super::trading_engine::Tradi
         
         for market_data in market_updates {
             let mut engine_lock = engine.lock().await;
-            if let Some(signal) = engine_lock.process_market_data(market_data) {
+            if let Some(signal) = engine_lock.process_market_data(market_data).await {
                 log::info!("🎯 Generated trading signal: {:?}", signal);
             }
         }
