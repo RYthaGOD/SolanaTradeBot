@@ -546,6 +546,14 @@ pub struct LearningCoordinator {
     agents: Arc<Mutex<HashMap<String, Arc<RLAgent>>>>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentSnapshot {
+    pub agent_id: String,
+    pub provider_type: String,
+    pub epsilon: f64,
+    pub performance: AgentPerformance,
+}
+
 impl LearningCoordinator {
     pub fn new() -> Self {
         Self {
@@ -602,6 +610,23 @@ impl LearningCoordinator {
         }
 
         performance_map
+    }
+
+    pub async fn get_agent_snapshots(&self) -> Vec<AgentSnapshot> {
+        let agents = self.agents.lock().await;
+        let mut snapshots = Vec::new();
+
+        for (id, agent) in agents.iter() {
+            let performance = agent.get_performance().await;
+            snapshots.push(AgentSnapshot {
+                agent_id: id.clone(),
+                provider_type: agent.provider_type.clone(),
+                epsilon: agent.epsilon,
+                performance,
+            });
+        }
+
+        snapshots
     }
 }
 

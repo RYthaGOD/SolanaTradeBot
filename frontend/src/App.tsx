@@ -10,6 +10,9 @@ const AIOrchestrator = lazy(() => import('./components/AIOrchestrator'))
 const RLAgents = lazy(() => import('./components/RLAgents'))
 const X402Marketplace = lazy(() => import('./components/X402Marketplace'))
 const MemeAnalyzer = lazy(() => import('./components/MemeAnalyzer'))
+const MobulaAnalytics = lazy(() => import('./components/MobulaAnalytics'))
+const MoralisWallet = lazy(() => import('./components/MoralisWallet'))
+const RLDashboardView = lazy(() => import('./components/RLDashboard'))
 
 type ViewMode = 'landing' | 'console'
 
@@ -65,16 +68,19 @@ function App() {
     }
   }, [viewMode])
 
-  const tabs = [
-    { id: 'dashboard', icon: '📊', name: 'Dashboard', color: '#00d4ff' },
-    { id: 'ai', icon: '🤖', name: 'AI Orchestrator', color: '#ff00ff' },
-    { id: 'rl', icon: '🧠', name: 'RL Agents', color: '#00ff88' },
-    { id: 'trading', icon: '🎯', name: 'Signals', color: '#ffaa00' },
-    { id: 'portfolio', icon: '💼', name: 'Portfolio', color: '#00aaff' },
-    { id: 'performance', icon: '📈', name: 'Performance', color: '#ff5500' },
-    { id: 'x402', icon: '📡', name: 'X402 Market', color: '#aa00ff' },
-    { id: 'meme', icon: '🎪', name: 'Meme Coins', color: '#ff0099' },
-  ]
+    const tabs = [
+      { id: 'dashboard', icon: '📊', name: 'Dashboard', color: '#00d4ff' },
+      { id: 'mobula', icon: '🌐', name: 'Mobula Analytics', color: '#f5c56a' },
+      { id: 'wallet', icon: '👛', name: 'Wallet Insights', color: '#f5c56a' },
+      { id: 'ralytics', icon: '🧬', name: 'RL Telemetry', color: '#48f7c1' },
+      { id: 'ai', icon: '🤖', name: 'AI Orchestrator', color: '#ff00ff' },
+      { id: 'rl', icon: '🧠', name: 'RL Agents', color: '#00ff88' },
+      { id: 'trading', icon: '🎯', name: 'Signals', color: '#ffaa00' },
+      { id: 'portfolio', icon: '💼', name: 'Portfolio', color: '#00aaff' },
+      { id: 'performance', icon: '📈', name: 'Performance', color: '#ff5500' },
+      { id: 'x402', icon: '📡', name: 'X402 Market', color: '#aa00ff' },
+      { id: 'meme', icon: '🎪', name: 'Meme Coins', color: '#ff0099' },
+    ]
 
   if (viewMode === 'landing') {
     return (
@@ -147,6 +153,9 @@ function App() {
         <div className="content-wrapper fade-in">
           <Suspense fallback={<div className="loading">Loading module...</div>}>
             {activeTab === 'dashboard' && <Dashboard />}
+              {activeTab === 'mobula' && <MobulaAnalytics />}
+              {activeTab === 'wallet' && <MoralisWallet />}
+              {activeTab === 'ralytics' && <RLDashboardView />}
             {activeTab === 'ai' && <AIOrchestrator />}
             {activeTab === 'rl' && <RLAgents />}
             {activeTab === 'trading' && <TradingView />}

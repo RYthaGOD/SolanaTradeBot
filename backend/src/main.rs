@@ -199,12 +199,13 @@ async fn main() {
     let api_risk = risk_manager.clone();
     let api_solana = solana_client.clone();
     let api_orchestrator = ai_orchestrator.clone();
+    let rl_api = rl_coordinator.clone();
 
     log::info!("🌐 Starting Legacy API on port 8080 and AI-Orchestrated API v2 on port 8081...");
 
     // Start legacy API in background
     let legacy_api = tokio::spawn(async move {
-        api::start_server(api_engine, api_risk, api_solana).await;
+        api::start_server(api_engine, api_risk, api_solana, rl_api).await;
     });
 
     // Start new AI-orchestrated API v2 in background

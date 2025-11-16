@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { httpJson } from '../utils/http'
-import MobulaInsights from './MobulaInsights'
 
 interface PerformanceData {
   total_return: number
@@ -136,7 +135,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <MobulaInsights />
     </div>
   )
 }

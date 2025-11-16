@@ -119,10 +119,7 @@ impl MoralisClient {
             .and_then(|v| v.as_u64())
             .unwrap_or(12);
 
-        let nft_count = value
-            .get("nft_count")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(3);
+        let nft_count = value.get("nft_count").and_then(|v| v.as_u64()).unwrap_or(3);
 
         let mut chains = Vec::new();
         if let Some(chain_array) = value.get("chains").and_then(|v| v.as_array()) {

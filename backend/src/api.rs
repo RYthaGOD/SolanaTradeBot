@@ -1,6 +1,8 @@
 use crate::dex_screener::DexScreenerClient;
 use crate::jupiter_integration::JupiterClient;
+use crate::moralis::{MoralisClient, WalletOverview};
 use crate::pumpfun::PumpFunClient;
+use crate::reinforcement_learning::LearningCoordinator;
 use crate::signal_platform::SignalMarketplace;
 use crate::switchboard_oracle::SwitchboardClient;
 use crate::websocket::{create_ws_broadcaster, handle_websocket};
@@ -31,6 +33,7 @@ pub async fn start_server(
     engine: Arc<Mutex<super::trading_engine::TradingEngine>>,
     risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
     solana_client: Arc<Mutex<super::solana_integration::SolanaClient>>,
+    rl_coordinator: Arc<Mutex<LearningCoordinator>>,
 ) {
     log::info!("🌐 Starting Warp server on :8080");
 
@@ -54,6 +57,7 @@ pub async fn start_server(
 
     // Create Signal Marketplace
     let signal_marketplace = Arc::new(SignalMarketplace::new(rpc_url.clone()));
+    let moralis_client = Arc::new(MoralisClient::new());
 
     // Create Quant Analyzer
     let quant_analyzer = Arc::new(crate::quant_analysis::QuantAnalyzer::new());
@@ -555,6 +559,86 @@ pub async fn start_server(
                 }
             })
     };
+
+    let wallet_insights_route = {
+        let moralis = moralis_client.clone();
+
+        warp::path!("wallet" / "insights" / String)
+            .and(warp::get())
+            .and_then(move |address: String| {
+                let moralis = moralis.clone();
+
+                async move {
+                    match moralis.get_wallet_overview(&address).await {
+                        Ok(overview) => Ok::<_, warp::Rejection>(warp::reply::json(
+                            &ApiResponse::new(overview, "Wallet insights retrieved"),
+                        )),
+                        Err(e) => {
+                            log::error!("Wallet insights error: {}", e);
+                            let fallback = WalletOverview {
+                                address: address.clone(),
+                                total_value_usd: 0.0,
+                                native_balance_usd: 0.0,
+                                token_count: 0,
+                                nft_count: 0,
+                                chains: Vec::new(),
+                                recent_activity: Vec::new(),
+                            };
+                            Ok(warp::reply::json(&ApiResponse {
+                                success: false,
+                                data: fallback,
+                                message: format!("Failed to load wallet data: {}", e),
+                            }))
+                        }
+                    }
+                }
+            })
+    };
+
+    let rl_performance_route = {
+        let coordinator = rl_coordinator.clone();
+
+        warp::path!("rl" / "performance")
+            .and(warp::get())
+            .and_then(move || {
+                let coordinator = coordinator.clone();
+
+                async move {
+                    let guard = coordinator.lock().await;
+                    let perf = guard.get_all_performance().await;
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        perf,
+                        "RL performance retrieved",
+                    )))
+                }
+            })
+    };
+
+    let rl_provider_route = {
+        let coordinator = rl_coordinator.clone();
+
+        warp::path!("rl" / "providers")
+            .and(warp::get())
+            .and_then(move || {
+                let coordinator = coordinator.clone();
+
+                async move {
+                    let guard = coordinator.lock().await;
+                    let snapshots = guard.get_agent_snapshots().await;
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        snapshots,
+                        "RL provider snapshots retrieved",
+                    )))
+                }
+            })
+    };
+
+    let analytics_routes = dex_search_route
+        .or(dex_trending_route)
+        .or(dex_opportunities_route)
+        .boxed();
+    let wallet_routes = wallet_insights_route.boxed();
+    let rl_routes = rl_performance_route.or(rl_provider_route).boxed();
 
     // PumpFun endpoints
     let pumpfun_launches_route = {
@@ -1152,9 +1236,9 @@ pub async fn start_server(
         .or(jito_tip_account_route)
         .or(oracle_price_route)
         .or(oracle_feeds_route)
-        .or(dex_search_route)
-        .or(dex_trending_route)
-        .or(dex_opportunities_route)
+        .or(analytics_routes)
+        .or(wallet_routes)
+        .or(rl_routes)
         .or(pumpfun_launches_route)
         .or(pumpfun_signals_route)
         .or(signal_marketplace_stats_route)

@@ -93,7 +93,10 @@ impl PumpFunClient {
     }
 
     /// Get recently created tokens on PumpFun with real-time price data from Moralis
-    pub async fn get_recent_launches(&self, limit: usize) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
+    pub async fn get_recent_launches(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
         log::debug!("Fetching recent launches from PumpFun");
 
         let mut launches = self.simulate_recent_launches(limit);
@@ -110,7 +113,9 @@ impl PumpFunClient {
                         }
                         log::debug!(
                             "✅ Updated {} with real price: ${:.6} on {}",
-                            launch.symbol, price_data.usd_price, price_data.exchange_name
+                            launch.symbol,
+                            price_data.usd_price,
+                            price_data.exchange_name
                         );
                     }
                     Ok(None) => {
@@ -122,14 +127,20 @@ impl PumpFunClient {
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
-            log::info!("✅ Enriched {} launches with real-time price data", launches.len());
+            log::info!(
+                "✅ Enriched {} launches with real-time price data",
+                launches.len()
+            );
         }
 
         Ok(launches)
     }
 
     /// Get token details by mint address using Moralis API
-    pub async fn get_token_details(&self, mint: &str) -> Result<Option<TokenLaunch>, Box<dyn Error>> {
+    pub async fn get_token_details(
+        &self,
+        mint: &str,
+    ) -> Result<Option<TokenLaunch>, Box<dyn Error>> {
         log::debug!("Fetching token details for: {}", mint);
 
         if let Some(_) = &self.moralis_api_key {
@@ -137,7 +148,9 @@ impl PumpFunClient {
                 Ok(Some(price_data)) => {
                     log::info!(
                         "✅ Got real-time price data from Moralis for token: {} ({} ${:.6})",
-                        mint, price_data.exchange_name, price_data.usd_price
+                        mint,
+                        price_data.exchange_name,
+                        price_data.usd_price
                     );
                     let estimated_supply = 1_000_000_000.0;
                     let market_cap = price_data.usd_price * estimated_supply;
@@ -169,7 +182,9 @@ impl PumpFunClient {
         token_address: &str,
     ) -> Result<Option<MoralisTokenPrice>, Box<dyn Error>> {
         if self.moralis_api_key.is_none() {
-            return Err("Moralis API key required. Set MORALIS_API_KEY environment variable.".into());
+            return Err(
+                "Moralis API key required. Set MORALIS_API_KEY environment variable.".into(),
+            );
         }
 
         let url = format!("{}/{}/price", self.moralis_api_url, token_address);
@@ -187,12 +202,17 @@ impl PumpFunClient {
             if status == 404 {
                 return Ok(None);
             }
-            let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+            let error_text = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
             return Err(format!("Moralis API error {}: {}", status, error_text).into());
         }
 
-        let price_data: MoralisTokenPrice =
-            response.json().await.map_err(|e| format!("Failed to parse response: {}", e))?;
+        let price_data: MoralisTokenPrice = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
 
         Ok(Some(price_data))
     }
@@ -287,7 +307,7 @@ impl PumpFunClient {
 
         let risk_level = if launch.market_cap < 10_000.0 || age_hours < 1 {
             RiskLevel::Extreme
-        } else if launch.market_cap < 30,000.0 || age_hours < 3 {
+        } else if launch.market_cap < 30_000.0 || age_hours < 3 {
             RiskLevel::High
         } else if launch.market_cap < 50_000.0 {
             RiskLevel::Medium
@@ -358,14 +378,20 @@ impl PumpFunClient {
         signals
     }
 
-    pub async fn get_top_opportunities(&self, limit: usize) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
+    pub async fn get_top_opportunities(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
         let launches = self.get_recent_launches(limit * 2).await?;
         let mut signals = self.generate_meme_signals(launches).await;
         signals.truncate(limit);
         Ok(signals)
     }
 
-    pub async fn is_safe_to_trade_with_price(&self, token_address: &str) -> Result<bool, Box<dyn Error>> {
+    pub async fn is_safe_to_trade_with_price(
+        &self,
+        token_address: &str,
+    ) -> Result<bool, Box<dyn Error>> {
         if self.moralis_api_key.is_none() {
             log::warn!("Cannot validate token safety without Moralis API key");
             return Ok(false);
@@ -398,12 +424,16 @@ impl MemeAnalyzer {
         }
     }
 
-    pub async fn analyze_and_rank(&self, limit: usize) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
+    pub async fn analyze_and_rank(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
         self.pumpfun.get_top_opportunities(limit).await
     }
 
     pub fn is_safe_to_trade(&self, sentiment: &MemeSentiment, _min_market_cap: f64) -> bool {
-        matches!(sentiment.risk_level, RiskLevel::Low | RiskLevel::Medium) && sentiment.sentiment_score > 40.0
+        matches!(sentiment.risk_level, RiskLevel::Low | RiskLevel::Medium)
+            && sentiment.sentiment_score > 40.0
     }
 
     pub fn calculate_meme_position_size(&self, confidence: f64, account_balance: f64) -> f64 {
@@ -441,10 +471,7 @@ pub struct MoralisNativePrice {
 
 impl MoralisTokenPrice {
     pub fn native_price_f64(&self) -> f64 {
-        self.native_price
-            .value
-            .parse::<f64>()
-            .unwrap_or(0.0)
+        self.native_price.value.parse::<f64>().unwrap_or(0.0)
             / 10_f64.powi(self.native_price.decimals as i32)
     }
 }

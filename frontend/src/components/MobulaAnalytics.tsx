@@ -60,7 +60,7 @@ const percent = (value?: number) => {
   return `${sign}${value.toFixed(1)}%`
 }
 
-export default function MobulaInsights() {
+export default function MobulaAnalytics() {
   const [trending, setTrending] = useState<MobulaPair[]>([])
   const [opportunities, setOpportunities] = useState<TradingOpportunity[]>([])
   const [searchResults, setSearchResults] = useState<MobulaPair[]>([])
