@@ -27,10 +27,12 @@ pub async fn start_server(
     _solana_client: Arc<Mutex<super::solana_integration::SolanaClient>>,
     _solana_rpc: Arc<Mutex<super::solana_rpc::SolanaRpcClient>>,
     _jupiter_client: Arc<Mutex<super::jupiter_integration::JupiterClient>>,
+    _dex_executor: Arc<Mutex<super::dex_executor::DexExecutor>>,
     config: super::config::ApiConfig,
 ) {
     log::info!("🌐 Starting Warp server on {}:{}", config.host, config.port);
     log::info!("🔷 Jupiter Aggregator integration active");
+    log::info!("🔷 Phase 2 DEX Executor ready for devnet testing");
     
     let cors = warp::cors()
         .allow_any_origin()

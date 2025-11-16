@@ -65,3 +65,6 @@ lazy_static = "1.4"
 # Error handling
 anyhow = "1.0"
 thiserror = "1.0"
+
+# Serialization
+bincode = "1.3"
