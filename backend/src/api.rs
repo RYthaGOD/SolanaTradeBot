@@ -25,9 +25,12 @@ pub async fn start_server(
     engine: Arc<Mutex<super::trading_engine::TradingEngine>>,
     risk_manager: Arc<Mutex<super::risk_management::RiskManager>>,
     _solana_client: Arc<Mutex<super::solana_integration::SolanaClient>>,
+    _solana_rpc: Arc<Mutex<super::solana_rpc::SolanaRpcClient>>,
+    _jupiter_client: Arc<Mutex<super::jupiter_integration::JupiterClient>>,
     config: super::config::ApiConfig,
 ) {
     log::info!("🌐 Starting Warp server on {}:{}", config.host, config.port);
+    log::info!("🔷 Jupiter Aggregator integration active");
     
     let cors = warp::cors()
         .allow_any_origin()

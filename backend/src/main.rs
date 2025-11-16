@@ -6,11 +6,14 @@ mod api;
 mod config;
 mod key_management;
 mod monitoring;
+mod solana_rpc;
+mod jupiter_integration;
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::path::Path;
 use solana_sdk::signer::Signer;
+use solana_sdk::commitment_config::CommitmentConfig;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -63,25 +66,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     log::info!("🔑 Wallet public key: {}", keypair.pubkey());
     
-    // Initialize Solana client with fallbacks
+    // Initialize Solana RPC client with fallbacks
     let mut rpc_urls = vec![config.solana.rpc_url.clone()];
     rpc_urls.extend(config.solana.rpc_fallbacks.clone());
     
-    let mut solana_client = solana_integration::SolanaClient::new(
+    let mut solana_rpc = solana_rpc::SolanaRpcClient::new(
         rpc_urls,
-        config.trading.enable_paper_trading
+        config.trading.enable_paper_trading,
+        CommitmentConfig::confirmed(),
     );
-    solana_client.set_wallet(&keypair);
     
     // Perform health check
-    if solana_client.health_check().await {
+    if solana_rpc.health_check().await {
         log::info!("✅ Solana RPC connection established");
     } else {
-        log::error!("❌ Failed to connect to Solana RPC");
+        log::warn!("⚠️ Failed to connect to Solana RPC (using simulation mode)");
         alert_manager.send_alert(monitoring::Alert::new(
-            monitoring::AlertLevel::Error,
+            monitoring::AlertLevel::Warning,
             "RPC Connection Failed",
-            "Failed to connect to any Solana RPC endpoint"
+            "Using simulation mode - no real RPC connection"
         )).await;
         
         if config.trading.enable_trading {
@@ -89,6 +92,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     
+    // Initialize Jupiter aggregator client
+    let jupiter_client = jupiter_integration::JupiterClient::new(
+        "https://quote-api.jup.ag/v6".to_string(),
+        config.trading.enable_paper_trading,
+    );
+    
+    log::info!("🔷 Jupiter Aggregator initialized");
+    
+    // Get wallet balance
+    match solana_rpc.get_balance(&keypair.pubkey()).await {
+        Ok(balance) => {
+            let sol_balance = jupiter_integration::lamports_to_sol(balance);
+            log::info!("💰 Wallet balance: {:.4} SOL ({} lamports)", sol_balance, balance);
+        }
+        Err(e) => {
+            log::warn!("⚠️ Could not fetch wallet balance: {}", e);
+        }
+    }
+    
+    let solana_rpc = Arc::new(Mutex::new(solana_rpc));
+    let jupiter_client = Arc::new(Mutex::new(jupiter_client));
+    
+    // Create legacy solana client wrapper for backward compatibility
+    let mut rpc_urls_legacy = vec![config.solana.rpc_url.clone()];
+    rpc_urls_legacy.extend(config.solana.rpc_fallbacks.clone());
+    
+    let mut solana_client = solana_integration::SolanaClient::new(
+        rpc_urls_legacy,
+        config.trading.enable_paper_trading
+    );
+    solana_client.set_wallet(&keypair);
     let solana_client = Arc::new(Mutex::new(solana_client));
     
     // Initialize trading engine with config
@@ -112,12 +146,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let signal_engine = trading_engine.clone();
     let signal_risk = risk_manager.clone();
     let signal_solana = solana_client.clone();
+    let signal_rpc = solana_rpc.clone();
+    let signal_jupiter = jupiter_client.clone();
     let signal_alert = alert_manager.clone();
     tokio::spawn(async move {
         trading_engine::generate_trading_signals(
             signal_engine, 
             signal_risk, 
             signal_solana,
+            signal_rpc,
+            signal_jupiter,
             signal_alert
         ).await;
     });
@@ -125,7 +163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start metrics server if enabled
     if config.monitoring.enable_metrics {
         let metrics_port = config.monitoring.metrics_port;
-        let registry = metrics_registry.get_registry().await;
+        let _registry = metrics_registry.get_registry().await;
         
         tokio::spawn(async move {
             log::info!("📊 Starting metrics server on port {}", metrics_port);
@@ -145,6 +183,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_engine = trading_engine.clone();
     let api_risk = risk_manager.clone();
     let api_solana = solana_client.clone();
+    let api_rpc = solana_rpc.clone();
+    let api_jupiter = jupiter_client.clone();
     let api_config = config.api.clone();
     
     log::info!("🌐 Starting Web API on {}:{}", api_config.host, api_config.port);
@@ -152,10 +192,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     alert_manager.send_alert(monitoring::Alert::new(
         monitoring::AlertLevel::Info,
         "System Started",
-        "AgentBurn Trading System is now running"
+        "AgentBurn Trading System is now running with Jupiter integration"
     )).await;
     
-    api::start_server(api_engine, api_risk, api_solana, api_config).await;
+    api::start_server(api_engine, api_risk, api_solana, api_rpc, api_jupiter, api_config).await;
     
     Ok(())
 }
