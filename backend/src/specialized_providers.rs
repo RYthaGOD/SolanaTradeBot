@@ -1,14 +1,14 @@
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde::{Deserialize, Serialize};
-use chrono::Utc;
 
-use crate::switchboard_oracle::SwitchboardClient;
 use crate::dex_screener::DexScreenerClient;
-use crate::pumpfun::PumpFunClient;
 use crate::jupiter_integration::JupiterClient;
-use crate::signal_platform::{SignalMarketplace, TradingSignalData, SignalAction, SignalStatus};
-use crate::reinforcement_learning::{RLAgent, LearningCoordinator};
+use crate::pumpfun::PumpFunClient;
+use crate::reinforcement_learning::{LearningCoordinator, RLAgent};
+use crate::signal_platform::{SignalAction, SignalMarketplace, SignalStatus, TradingSignalData};
+use crate::switchboard_oracle::SwitchboardClient;
 
 /// Provider specialization type
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -51,13 +51,16 @@ impl SpecializedProvider {
             provider_id.clone(),
             None, // DeepSeek client optional
         ));
-        
+
         Self {
             provider_id,
             provider_name,
             provider_type,
             marketplace,
-            oracle_client: Arc::new(SwitchboardClient::new(rpc_url.clone(), std::env::var("SOLANA_RPC_URL").is_ok())),
+            oracle_client: Arc::new(SwitchboardClient::new(
+                rpc_url.clone(),
+                std::env::var("SOLANA_RPC_URL").is_ok(),
+            )),
             dex_client: Arc::new(DexScreenerClient::new()),
             pumpfun_client: Arc::new(PumpFunClient::new()),
             jupiter_client: Arc::new(JupiterClient::new()),
@@ -67,7 +70,7 @@ impl SpecializedProvider {
             rl_coordinator: None,
         }
     }
-    
+
     /// Connect to RL coordinator for centralized learning
     pub fn with_rl_coordinator(mut self, coordinator: Arc<Mutex<LearningCoordinator>>) -> Self {
         self.rl_coordinator = Some(coordinator);
@@ -86,11 +89,7 @@ impl SpecializedProvider {
             match self.generate_and_publish_signals().await {
                 Ok(count) => {
                     if count > 0 {
-                        log::info!(
-                            "✅ {} published {} signals",
-                            self.provider_name,
-                            count
-                        );
+                        log::info!("✅ {} published {} signals", self.provider_name, count);
                     }
                 }
                 Err(e) => {
@@ -126,7 +125,7 @@ impl SpecializedProvider {
                 Ok(signal_id) => {
                     published_count += 1;
                     log::debug!("Published signal {} for {}", signal_id, signal.symbol);
-                    
+
                     // Register this agent with RL coordinator if connected
                     if let Some(coordinator) = &self.rl_coordinator {
                         let coordinator_lock = coordinator.lock().await;
@@ -145,26 +144,31 @@ impl SpecializedProvider {
         let mut signals = Vec::new();
 
         // Get recent meme launches
-        let launches = self.pumpfun_client.get_recent_launches(10).await
+        let launches = self
+            .pumpfun_client
+            .get_recent_launches(10)
+            .await
             .map_err(|e| format!("PumpFun error: {}", e))?;
 
         // Get oracle data for price validation
-        let oracle_feeds = self.oracle_client.fetch_multiple_feeds(&[
-            "SOL/USD".to_string(),
-        ]).await.map_err(|e| format!("Oracle error: {}", e))?;
+        let oracle_feeds = self
+            .oracle_client
+            .fetch_multiple_feeds(&["SOL/USD".to_string()])
+            .await
+            .map_err(|e| format!("Oracle error: {}", e))?;
 
         let sol_price = oracle_feeds.first().map(|f| f.price).unwrap_or(100.0);
 
         for launch in launches {
             let sentiment = self.pumpfun_client.analyze_sentiment(&launch);
-            
+
             // Only signal on high confidence memecoins
             if sentiment.sentiment_score > 60.0 {
                 let confidence = (sentiment.sentiment_score / 100.0).min(0.95);
-                
+
                 // Calculate realistic entry based on SOL price
                 let entry_price = launch.market_cap / 1000000.0;
-                
+
                 let signal = TradingSignalData {
                     id: uuid::Uuid::new_v4().to_string(),
                     provider: self.provider_id.clone(),
@@ -185,7 +189,7 @@ impl SpecializedProvider {
                     price: 25.0, // Premium price for meme signals
                     status: SignalStatus::Active,
                 };
-                
+
                 signals.push(signal);
             }
         }
@@ -203,7 +207,10 @@ impl SpecializedProvider {
             "ETH/USD".to_string(),
         ];
 
-        let feeds = self.oracle_client.fetch_multiple_feeds(&symbols).await
+        let feeds = self
+            .oracle_client
+            .fetch_multiple_feeds(&symbols)
+            .await
             .map_err(|e| format!("Oracle error: {}", e))?;
 
         for feed in feeds {
@@ -227,15 +234,15 @@ impl SpecializedProvider {
                     symbol: feed.symbol.clone(),
                     action,
                     entry_price: feed.price,
-                    target_price: if change > 0.0 { 
-                        feed.price * 1.03 
-                    } else { 
-                        feed.price * 0.97 
+                    target_price: if change > 0.0 {
+                        feed.price * 1.03
+                    } else {
+                        feed.price * 0.97
                     },
-                    stop_loss: if change > 0.0 { 
-                        feed.price * 0.98 
-                    } else { 
-                        feed.price * 1.02 
+                    stop_loss: if change > 0.0 {
+                        feed.price * 0.98
+                    } else {
+                        feed.price * 1.02
                     },
                     confidence,
                     timeframe: "1h".to_string(),
@@ -262,21 +269,25 @@ impl SpecializedProvider {
         let mut signals = Vec::new();
 
         // Get oracle data for perps analysis
-        let feeds = self.oracle_client.fetch_multiple_feeds(&[
-            "SOL/USD".to_string(),
-            "BTC/USD".to_string(),
-            "ETH/USD".to_string(),
-        ]).await.map_err(|e| format!("Oracle error: {}", e))?;
+        let feeds = self
+            .oracle_client
+            .fetch_multiple_feeds(&[
+                "SOL/USD".to_string(),
+                "BTC/USD".to_string(),
+                "ETH/USD".to_string(),
+            ])
+            .await
+            .map_err(|e| format!("Oracle error: {}", e))?;
 
         // Analyze each asset for perps opportunities
         for feed in feeds {
             // Simulate volatility analysis
             let volatility = rand::random::<f64>() * 0.1; // 0-10% volatility
-            
+
             // High volatility = good for perps trading
             if volatility > 0.05 {
                 let confidence = (volatility * 10.0).min(0.85);
-                
+
                 // Determine direction based on oracle confidence
                 let action = if feed.confidence < 0.5 {
                     // Low confidence = possible breakout
@@ -291,22 +302,22 @@ impl SpecializedProvider {
 
                 let leverage = 2.0; // 2x leverage suggestion
                 let is_buy = matches!(action, SignalAction::Buy);
-                
+
                 let signal = TradingSignalData {
                     id: uuid::Uuid::new_v4().to_string(),
                     provider: self.provider_id.clone(),
                     symbol: format!("{}-PERP", feed.symbol.replace("/USD", "")),
                     action,
                     entry_price: feed.price,
-                    target_price: feed.price * if is_buy { 
-                        1.05 * leverage 
-                    } else { 
-                        0.95 / leverage 
+                    target_price: feed.price * if is_buy {
+                        1.05 * leverage
+                    } else {
+                        0.95 / leverage
                     },
-                    stop_loss: feed.price * if is_buy { 
-                        0.97 
-                    } else { 
-                        1.03 
+                    stop_loss: feed.price * if is_buy {
+                        0.97
+                    } else {
+                        1.03
                     },
                     confidence,
                     timeframe: "2h".to_string(),
@@ -333,7 +344,10 @@ impl SpecializedProvider {
         let mut signals = Vec::new();
 
         // Get DEX opportunities
-        let opportunities = self.dex_client.get_top_opportunities(10).await
+        let opportunities = self
+            .dex_client
+            .get_top_opportunities(10)
+            .await
             .map_err(|e| format!("DEX error: {}", e))?;
 
         for opp in opportunities {
@@ -354,7 +368,7 @@ impl SpecializedProvider {
                     data_sources: vec!["DEX Screener".to_string(), "Multi-DEX Analysis".to_string()],
                     analysis: format!(
                         "High opportunity: {} - Score: {:.1}, Vol 24h: ${:.0}, Liquidity: ${:.0}, Signals: {}",
-                        opp.token_name, opp.opportunity_score, opp.volume_24h, 
+                        opp.token_name, opp.opportunity_score, opp.volume_24h,
                         opp.liquidity_usd, opp.signals.join(", ")
                     ),
                     timestamp: Utc::now().timestamp(),
@@ -388,16 +402,18 @@ impl SpecializedProvider {
 
             if should_buy && *capital >= signal.price {
                 // Purchase the signal
-                match self.marketplace.purchase_signal(
-                    &self.provider_id,
-                    &signal.id,
-                    signal.price,
-                ).await {
+                match self
+                    .marketplace
+                    .purchase_signal(&self.provider_id, &signal.id, signal.price)
+                    .await
+                {
                     Ok(_) => {
                         *capital -= signal.price;
                         log::info!(
                             "📊 Signal Trader purchased signal {} from {} for ${:.2}",
-                            signal.id, signal.provider, signal.price
+                            signal.id,
+                            signal.provider,
+                            signal.price
                         );
                     }
                     Err(e) => {
@@ -417,15 +433,15 @@ impl SpecializedProvider {
         // 2. Reasonable price (<30 tokens)
         // 3. Not expired soon (>30 min remaining)
         // 4. Good risk/reward ratio
-        
-        let time_remaining = signal.expiry - Utc::now().timestamp();
-        let risk_reward = (signal.target_price - signal.entry_price).abs() / 
-                          (signal.entry_price - signal.stop_loss).abs();
 
-        signal.confidence > 0.70 &&
-        signal.price < 30.0 &&
-        time_remaining > 1800 &&
-        risk_reward > 1.5
+        let time_remaining = signal.expiry - Utc::now().timestamp();
+        let risk_reward = (signal.target_price - signal.entry_price).abs()
+            / (signal.entry_price - signal.stop_loss).abs();
+
+        signal.confidence > 0.70
+            && signal.price < 30.0
+            && time_remaining > 1800
+            && risk_reward > 1.5
     }
 
     /// Generate meta-signals based on purchased signals
@@ -434,14 +450,16 @@ impl SpecializedProvider {
 
         // Analyze patterns from marketplace
         let active_signals = self.marketplace.get_active_signals().await;
-        
+
         // Find consensus signals (multiple providers agreeing)
-        let mut symbol_votes: std::collections::HashMap<String, (usize, Vec<&TradingSignalData>)> = 
+        let mut symbol_votes: std::collections::HashMap<String, (usize, Vec<&TradingSignalData>)> =
             std::collections::HashMap::new();
 
         for signal in &active_signals {
             if signal.provider != self.provider_id {
-                let entry = symbol_votes.entry(signal.symbol.clone()).or_insert((0, Vec::new()));
+                let entry = symbol_votes
+                    .entry(signal.symbol.clone())
+                    .or_insert((0, Vec::new()));
                 entry.0 += 1;
                 entry.1.push(signal);
             }
@@ -450,13 +468,12 @@ impl SpecializedProvider {
         // Generate meta-signals for symbols with consensus (3+ providers)
         for (symbol, (count, provider_signals)) in symbol_votes {
             if count >= 3 {
-                let avg_confidence: f64 = provider_signals.iter()
-                    .map(|s| s.confidence)
-                    .sum::<f64>() / provider_signals.len() as f64;
+                let avg_confidence: f64 =
+                    provider_signals.iter().map(|s| s.confidence).sum::<f64>()
+                        / provider_signals.len() as f64;
 
-                let avg_price: f64 = provider_signals.iter()
-                    .map(|s| s.entry_price)
-                    .sum::<f64>() / provider_signals.len() as f64;
+                let avg_price: f64 = provider_signals.iter().map(|s| s.entry_price).sum::<f64>()
+                    / provider_signals.len() as f64;
 
                 let signal = TradingSignalData {
                     id: uuid::Uuid::new_v4().to_string(),
@@ -474,11 +491,13 @@ impl SpecializedProvider {
                     ],
                     analysis: format!(
                         "Consensus signal: {} - {} providers agree, Avg confidence: {:.1}%",
-                        symbol, count, avg_confidence * 100.0
+                        symbol,
+                        count,
+                        avg_confidence * 100.0
                     ),
                     timestamp: Utc::now().timestamp(),
                     expiry: Utc::now().timestamp() + 21600, // 6 hours
-                    price: 30.0, // Premium for consensus signals
+                    price: 30.0,                            // Premium for consensus signals
                     status: SignalStatus::Active,
                 };
 
@@ -499,7 +518,7 @@ impl SpecializedProvider {
         // Get all provider statistics
         let provider_ids = vec![
             "memecoin_monitor",
-            "oracle_monitor", 
+            "oracle_monitor",
             "perps_monitor",
             "opportunity_analyzer",
             "signal_trader",
@@ -513,7 +532,7 @@ impl SpecializedProvider {
         }
 
         // Analyze signal patterns across all providers
-        let mut symbol_analysis: std::collections::HashMap<String, SymbolAnalysis> = 
+        let mut symbol_analysis: std::collections::HashMap<String, SymbolAnalysis> =
             std::collections::HashMap::new();
 
         for signal in &active_signals {
@@ -522,18 +541,20 @@ impl SpecializedProvider {
                 continue;
             }
 
-            let entry = symbol_analysis.entry(signal.symbol.clone()).or_insert(SymbolAnalysis {
-                symbol: signal.symbol.clone(),
-                provider_count: 0,
-                total_confidence: 0.0,
-                buy_signals: 0,
-                sell_signals: 0,
-                avg_entry_price: 0.0,
-                avg_target_price: 0.0,
-                avg_stop_loss: 0.0,
-                data_sources: Vec::new(),
-                providers: Vec::new(),
-            });
+            let entry = symbol_analysis
+                .entry(signal.symbol.clone())
+                .or_insert(SymbolAnalysis {
+                    symbol: signal.symbol.clone(),
+                    provider_count: 0,
+                    total_confidence: 0.0,
+                    buy_signals: 0,
+                    sell_signals: 0,
+                    avg_entry_price: 0.0,
+                    avg_target_price: 0.0,
+                    avg_stop_loss: 0.0,
+                    data_sources: Vec::new(),
+                    providers: Vec::new(),
+                });
 
             entry.provider_count += 1;
             entry.total_confidence += signal.confidence;
@@ -570,12 +591,14 @@ impl SpecializedProvider {
             // 3. High average confidence (>65%)
             let total_directional = analysis.buy_signals + analysis.sell_signals;
             let directional_strength = if total_directional > 0 {
-                (analysis.buy_signals.max(analysis.sell_signals) as f64) / (total_directional as f64)
+                (analysis.buy_signals.max(analysis.sell_signals) as f64)
+                    / (total_directional as f64)
             } else {
                 0.0
             };
 
-            if analysis.provider_count >= 2 && directional_strength >= 0.75 && avg_confidence > 0.65 {
+            if analysis.provider_count >= 2 && directional_strength >= 0.75 && avg_confidence > 0.65
+            {
                 let action = if analysis.buy_signals > analysis.sell_signals {
                     SignalAction::Buy
                 } else {
@@ -586,7 +609,7 @@ impl SpecializedProvider {
                 // Get provider reputation scores from marketplace
                 let mut reputation_weighted_confidence = 0.0;
                 let mut total_reputation = 0.0;
-                
+
                 for provider_id in &analysis.providers {
                     if let Some(stats) = self.marketplace.get_provider_stats(provider_id).await {
                         let reputation = stats.reputation_score;
@@ -595,30 +618,32 @@ impl SpecializedProvider {
                         total_reputation += reputation;
                     }
                 }
-                
+
                 let base_confidence = if total_reputation > 0.0 {
                     reputation_weighted_confidence / total_reputation
                 } else {
                     avg_confidence
                 };
-                
+
                 // Bonuses for consensus quality
                 let provider_diversity_bonus = (analysis.provider_count as f64 / 5.0).min(0.15);
                 let data_source_bonus = (analysis.data_sources.len() as f64 / 10.0).min(0.10);
                 let directional_bonus = (directional_strength - 0.75) * 0.5;
-                
+
                 // Penalty if providers conflict (reduces confidence)
                 let conflict_penalty = if directional_strength < 0.9 {
                     (0.9 - directional_strength) * 0.3
                 } else {
                     0.0
                 };
-                
-                let master_confidence = (base_confidence 
-                    + provider_diversity_bonus 
-                    + data_source_bonus 
+
+                let master_confidence = (base_confidence
+                    + provider_diversity_bonus
+                    + data_source_bonus
                     + directional_bonus
-                    - conflict_penalty).min(0.98).max(0.5);
+                    - conflict_penalty)
+                    .min(0.98)
+                    .max(0.5);
 
                 // Fetch current oracle data for validation
                 let oracle_validation = self.validate_with_oracle_data(&symbol).await;
@@ -656,7 +681,9 @@ impl SpecializedProvider {
 
         // Add market-wide insights if we have enough data
         if !provider_stats.is_empty() {
-            let market_insight = self.generate_market_insight(&provider_stats, &active_signals).await?;
+            let market_insight = self
+                .generate_market_insight(&provider_stats, &active_signals)
+                .await?;
             if let Some(insight_signal) = market_insight {
                 signals.push(insight_signal);
             }
@@ -676,10 +703,13 @@ impl SpecializedProvider {
 
         match self.oracle_client.fetch_price(&oracle_symbol).await {
             Ok(feed) => {
-                format!("Oracle validation: ${:.2} (confidence: {:.1}%)", 
-                    feed.price, feed.confidence * 100.0)
+                format!(
+                    "Oracle validation: ${:.2} (confidence: {:.1}%)",
+                    feed.price,
+                    feed.confidence * 100.0
+                )
             }
-            Err(_) => "Oracle validation: N/A".to_string()
+            Err(_) => "Oracle validation: N/A".to_string(),
         }
     }
 
@@ -692,18 +722,19 @@ impl SpecializedProvider {
         // Calculate market-wide metrics
         let total_signals = active_signals.len();
         let total_providers = provider_stats.len();
-        
+
         if total_signals < 5 || total_providers < 3 {
             return Ok(None); // Not enough data
         }
 
-        let avg_confidence: f64 = active_signals.iter()
-            .map(|s| s.confidence)
-            .sum::<f64>() / total_signals as f64;
+        let avg_confidence: f64 =
+            active_signals.iter().map(|s| s.confidence).sum::<f64>() / total_signals as f64;
 
-        let buy_ratio = active_signals.iter()
+        let buy_ratio = active_signals
+            .iter()
             .filter(|s| matches!(s.action, SignalAction::Buy))
-            .count() as f64 / total_signals as f64;
+            .count() as f64
+            / total_signals as f64;
 
         // Determine market sentiment
         let (market_sentiment, action) = if buy_ratio > 0.7 {
@@ -715,9 +746,11 @@ impl SpecializedProvider {
         };
 
         // Calculate provider performance metrics
-        let avg_reputation: f64 = provider_stats.iter()
+        let avg_reputation: f64 = provider_stats
+            .iter()
             .map(|(_, stats)| stats.reputation_score)
-            .sum::<f64>() / total_providers as f64;
+            .sum::<f64>()
+            / total_providers as f64;
 
         // Only generate market insight if sentiment is strong
         if market_sentiment != "NEUTRAL" {
@@ -752,18 +785,25 @@ impl SpecializedProvider {
             Ok(None)
         }
     }
-    
+
     /// Get RL agent performance metrics
     pub async fn get_performance_metrics(&self) -> crate::reinforcement_learning::AgentPerformance {
         self.rl_agent.get_performance().await
     }
-    
+
     /// Update RL agent with trade outcome
-    pub async fn learn_from_outcome(&self, symbol: String, entry_price: f64, exit_price: f64, action: &str, confidence: f64) {
-        use crate::reinforcement_learning::{Experience, MarketState, Action};
-        
+    pub async fn learn_from_outcome(
+        &self,
+        symbol: String,
+        entry_price: f64,
+        exit_price: f64,
+        action: &str,
+        confidence: f64,
+    ) {
+        use crate::reinforcement_learning::{Action, Experience, MarketState};
+
         let reward = RLAgent::calculate_reward(entry_price, exit_price, action, confidence);
-        
+
         let experience = Experience {
             state: MarketState {
                 symbol: symbol.clone(),
@@ -797,9 +837,14 @@ impl SpecializedProvider {
             timestamp: Utc::now().timestamp(),
             provider_id: self.provider_id.clone(),
         };
-        
+
         self.rl_agent.record_experience(experience).await;
-        log::info!("🧠 {} learned from {} trade: reward={:.3}", self.provider_name, symbol, reward);
+        log::info!(
+            "🧠 {} learned from {} trade: reward={:.3}",
+            self.provider_name,
+            symbol,
+            reward
+        );
     }
 }
 
@@ -860,7 +905,10 @@ pub async fn initialize_all_providers(
 
     for (id, name, provider_type) in providers {
         // Register provider in marketplace
-        if let Err(e) = marketplace.register_provider(id.clone(), name.clone()).await {
+        if let Err(e) = marketplace
+            .register_provider(id.clone(), name.clone())
+            .await
+        {
             log::warn!("Failed to register provider {}: {}", name, e);
         } else {
             log::info!("✅ Registered provider: {}", name);

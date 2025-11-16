@@ -1,9 +1,9 @@
 //! PumpFun memecoin monitoring and analysis
 //! Integrated into AI orchestrator for memecoin opportunity detection
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
-use chrono::Utc;
 
 /// PumpFun token launch data
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,31 +77,37 @@ impl PumpFunClient {
             client: reqwest::Client::new(),
         }
     }
-    
+
     /// Get recently created tokens on PumpFun
-    pub async fn get_recent_launches(&self, limit: usize) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
+    pub async fn get_recent_launches(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<TokenLaunch>, Box<dyn Error>> {
         log::debug!("Fetching recent launches from PumpFun");
-        
+
         // Since PumpFun API may require authentication or have rate limits,
         // we'll simulate data for now. In production, implement actual API calls.
         let simulated_launches = self.simulate_recent_launches(limit);
-        
+
         Ok(simulated_launches)
     }
-    
+
     /// Get token details by mint address
-    pub async fn get_token_details(&self, mint: &str) -> Result<Option<TokenLaunch>, Box<dyn Error>> {
+    pub async fn get_token_details(
+        &self,
+        mint: &str,
+    ) -> Result<Option<TokenLaunch>, Box<dyn Error>> {
         log::debug!("Fetching token details for: {}", mint);
-        
+
         // Simulate token details
         Ok(None) // In production, fetch from API
     }
-    
+
     /// Simulate recent launches for development
     fn simulate_recent_launches(&self, limit: usize) -> Vec<TokenLaunch> {
         let mut launches = Vec::new();
         let base_timestamp = Utc::now().timestamp();
-        
+
         let meme_names = [
             ("DOGE2", "Doge 2.0"),
             ("PEPE", "Pepe Coin"),
@@ -112,21 +118,25 @@ impl PumpFunClient {
             ("MEME", "Meme Coin"),
             ("FLOKI", "Floki Inu"),
         ];
-        
+
         for i in 0..limit.min(meme_names.len()) {
             let (symbol, name) = meme_names[i % meme_names.len()];
             let timestamp = base_timestamp - (i as i64 * 300); // 5 min apart
-            
+
             launches.push(TokenLaunch {
-                mint: format!("{}...{}", 
+                mint: format!(
+                    "{}...{}",
                     &hex::encode(&rand::random::<[u8; 4]>()),
-                    &hex::encode(&rand::random::<[u8; 4]>())),
+                    &hex::encode(&rand::random::<[u8; 4]>())
+                ),
                 name: name.to_string(),
                 symbol: symbol.to_string(),
                 uri: format!("https://pump.fun/token/{}", symbol.to_lowercase()),
-                creator: format!("{}...{}", 
+                creator: format!(
+                    "{}...{}",
                     &hex::encode(&rand::random::<[u8; 4]>()),
-                    &hex::encode(&rand::random::<[u8; 4]>())),
+                    &hex::encode(&rand::random::<[u8; 4]>())
+                ),
                 created_timestamp: timestamp,
                 market_cap: 10000.0 + rand::random::<f64>() * 100000.0,
                 reply_count: (rand::random::<u32>() % 100),
@@ -135,15 +145,15 @@ impl PumpFunClient {
                 bonding_curve: format!("bonding_curve_{}", i),
             });
         }
-        
+
         launches
     }
-    
+
     /// Analyze meme coin sentiment
     pub fn analyze_sentiment(&self, launch: &TokenLaunch) -> MemeSentiment {
         let mut sentiment_score = 0.0;
         let mut social_signals = Vec::new();
-        
+
         // Analyze reply count (engagement)
         if launch.reply_count > 50 {
             sentiment_score += 20.0;
@@ -152,13 +162,13 @@ impl PumpFunClient {
             sentiment_score += 10.0;
             social_signals.push("Medium engagement".to_string());
         }
-        
+
         // Analyze if currently live
         if launch.is_currently_live {
             sentiment_score += 15.0;
             social_signals.push("Currently live".to_string());
         }
-        
+
         // Analyze market cap
         if launch.market_cap > 50000.0 {
             sentiment_score += 25.0;
@@ -167,7 +177,7 @@ impl PumpFunClient {
             sentiment_score += 10.0;
             social_signals.push("Growing market cap".to_string());
         }
-        
+
         // Time since launch
         let age_hours = (Utc::now().timestamp() - launch.created_timestamp) / 3600;
         if age_hours < 1 {
@@ -177,7 +187,7 @@ impl PumpFunClient {
             sentiment_score += 10.0;
             social_signals.push("Recent launch".to_string());
         }
-        
+
         // Determine hype level
         let hype_level = if sentiment_score >= 70.0 {
             HypeLevel::Extreme
@@ -188,7 +198,7 @@ impl PumpFunClient {
         } else {
             HypeLevel::Low
         };
-        
+
         // Determine risk level (inversely related to market cap and age)
         let risk_level = if launch.market_cap < 10000.0 || age_hours < 1 {
             RiskLevel::Extreme
@@ -199,7 +209,7 @@ impl PumpFunClient {
         } else {
             RiskLevel::Low
         };
-        
+
         MemeSentiment {
             token_address: launch.mint.clone(),
             symbol: launch.symbol.clone(),
@@ -209,20 +219,20 @@ impl PumpFunClient {
             risk_level,
         }
     }
-    
+
     /// Generate trading signals for meme coins
     pub async fn generate_meme_signals(&self, launches: Vec<TokenLaunch>) -> Vec<MemeTradeSignal> {
         let mut signals = Vec::new();
-        
+
         for launch in launches {
             let sentiment = self.analyze_sentiment(&launch);
-            
+
             // Only generate signals for tokens with positive sentiment
             if sentiment.sentiment_score > 40.0 {
                 let mut reasons = Vec::new();
                 let action: String;
                 let confidence: f64;
-                
+
                 // Strong buy signal
                 if sentiment.sentiment_score > 70.0 && launch.market_cap > 30000.0 {
                     action = "BUY".to_string();
@@ -230,7 +240,7 @@ impl PumpFunClient {
                     reasons.push("Extremely high sentiment".to_string());
                     reasons.push("Strong community backing".to_string());
                     reasons.extend(sentiment.social_signals.clone());
-                } 
+                }
                 // Moderate buy signal
                 else if sentiment.sentiment_score > 50.0 {
                     action = "BUY".to_string();
@@ -245,12 +255,12 @@ impl PumpFunClient {
                     reasons.push("Moderate sentiment".to_string());
                     reasons.push("Monitor for better entry".to_string());
                 }
-                
+
                 // Estimate prices (simplified)
                 let entry_price = launch.market_cap / 1000000.0; // Simplified price calculation
                 let target_price = entry_price * (1.0 + confidence);
                 let stop_loss = entry_price * 0.85; // 15% stop loss
-                
+
                 signals.push(MemeTradeSignal {
                     token_address: launch.mint.clone(),
                     symbol: launch.symbol.clone(),
@@ -265,17 +275,20 @@ impl PumpFunClient {
                 });
             }
         }
-        
+
         // Sort by confidence
         signals.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
-        
+
         log::info!("Generated {} meme coin trading signals", signals.len());
-        
+
         signals
     }
-    
+
     /// Get top meme coin opportunities
-    pub async fn get_top_opportunities(&self, limit: usize) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
+    pub async fn get_top_opportunities(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
         let launches = self.get_recent_launches(limit * 2).await?;
         let mut signals = self.generate_meme_signals(launches).await;
         signals.truncate(limit);
@@ -294,19 +307,22 @@ impl MemeAnalyzer {
             pumpfun: PumpFunClient::new(),
         }
     }
-    
+
     /// Analyze multiple meme coins and rank them
-    pub async fn analyze_and_rank(&self, limit: usize) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
+    pub async fn analyze_and_rank(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<MemeTradeSignal>, Box<dyn Error>> {
         self.pumpfun.get_top_opportunities(limit).await
     }
-    
+
     /// Check if a meme coin is safe to trade
     pub fn is_safe_to_trade(&self, sentiment: &MemeSentiment, _min_market_cap: f64) -> bool {
         // Don't trade extreme risk or very low sentiment
-        matches!(sentiment.risk_level, RiskLevel::Low | RiskLevel::Medium) &&
-        sentiment.sentiment_score > 40.0
+        matches!(sentiment.risk_level, RiskLevel::Low | RiskLevel::Medium)
+            && sentiment.sentiment_score > 40.0
     }
-    
+
     /// Calculate position size for meme coin trade
     pub fn calculate_meme_position_size(&self, confidence: f64, account_balance: f64) -> f64 {
         // Use smaller position sizes for meme coins due to higher risk
@@ -350,7 +366,7 @@ mod tests {
             king_of_the_hill_timestamp: None,
             bonding_curve: "test".to_string(),
         };
-        
+
         let sentiment = client.analyze_sentiment(&launch);
         assert!(sentiment.sentiment_score > 0.0);
         assert!(!sentiment.social_signals.is_empty());

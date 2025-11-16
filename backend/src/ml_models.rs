@@ -1,5 +1,3 @@
-
-
 #[derive(Debug, Clone)]
 pub struct TradingPredictor {
     pub model_loaded: bool,
@@ -7,18 +5,16 @@ pub struct TradingPredictor {
 
 impl TradingPredictor {
     pub fn new() -> Self {
-        Self {
-            model_loaded: true,
-        }
+        Self { model_loaded: true }
     }
-    
+
     pub async fn predict(&self, features: &[f64]) -> (f64, f64) {
         let confidence = 0.5 + (features.iter().sum::<f64>().sin().abs() * 0.3);
         let price_change = features.iter().sum::<f64>().cos() * 0.02;
-        
+
         (confidence.min(0.95).max(0.1), price_change)
     }
-    
+
     pub fn generate_features(&self, market_data: &super::trading_engine::MarketData) -> Vec<f64> {
         vec![
             market_data.price / 1000.0,

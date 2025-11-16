@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// Trade record for database storage
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -8,7 +8,7 @@ pub struct TradeRecord {
     pub id: String,
     pub timestamp: i64,
     pub symbol: String,
-    pub action: String,        // "BUY" or "SELL"
+    pub action: String, // "BUY" or "SELL"
     pub price: f64,
     pub size: f64,
     pub total_value: f64,
@@ -69,9 +69,14 @@ impl Database {
 
     /// Insert a new trade record
     pub fn insert_trade(&mut self, trade: TradeRecord) -> Result<(), String> {
-        log::info!("📝 Recording trade: {} {} {} at ${}", 
-                  trade.action, trade.size, trade.symbol, trade.price);
-        
+        log::info!(
+            "📝 Recording trade: {} {} {} at ${}",
+            trade.action,
+            trade.size,
+            trade.symbol,
+            trade.price
+        );
+
         self.trades.push(trade);
         self.save_to_file()?;
         Ok(())
@@ -84,10 +89,7 @@ impl Database {
 
     /// Get trades for a specific symbol
     pub fn get_trades_by_symbol(&self, symbol: &str) -> Vec<&TradeRecord> {
-        self.trades
-            .iter()
-            .filter(|t| t.symbol == symbol)
-            .collect()
+        self.trades.iter().filter(|t| t.symbol == symbol).collect()
     }
 
     /// Get trades within a time range
@@ -100,11 +102,7 @@ impl Database {
 
     /// Get recent trades (last N)
     pub fn get_recent_trades(&self, count: usize) -> Vec<&TradeRecord> {
-        self.trades
-            .iter()
-            .rev()
-            .take(count)
-            .collect()
+        self.trades.iter().rev().take(count).collect()
     }
 
     /// Insert portfolio snapshot
@@ -121,11 +119,7 @@ impl Database {
 
     /// Get recent snapshots (last N)
     pub fn get_recent_snapshots(&self, count: usize) -> Vec<&PortfolioSnapshot> {
-        self.snapshots
-            .iter()
-            .rev()
-            .take(count)
-            .collect()
+        self.snapshots.iter().rev().take(count).collect()
     }
 
     /// Insert performance record
@@ -155,7 +149,8 @@ impl Database {
                 .iter()
                 .filter(|t| t.pnl > 0.0)
                 .map(|t| t.pnl)
-                .sum::<f64>() / winning_trades as f64
+                .sum::<f64>()
+                / winning_trades as f64
         } else {
             0.0
         };
@@ -165,7 +160,8 @@ impl Database {
                 .iter()
                 .filter(|t| t.pnl < 0.0)
                 .map(|t| t.pnl.abs())
-                .sum::<f64>() / losing_trades as f64
+                .sum::<f64>()
+                / losing_trades as f64
         } else {
             0.0
         };
@@ -186,7 +182,11 @@ impl Database {
             total_fees,
             avg_win,
             avg_loss,
-            profit_factor: if avg_loss > 0.0 { avg_win / avg_loss } else { 0.0 },
+            profit_factor: if avg_loss > 0.0 {
+                avg_win / avg_loss
+            } else {
+                0.0
+            },
         }
     }
 
@@ -211,7 +211,7 @@ impl Database {
     /// Load database from file
     fn load_from_file(&mut self) -> Result<(), String> {
         let path = Path::new(&self.data_file);
-        
+
         if !path.exists() {
             return Ok(()); // No file yet, start fresh
         }
@@ -226,8 +226,11 @@ impl Database {
         self.snapshots = data.snapshots;
         self.performance = data.performance;
 
-        log::info!("✅ Loaded database: {} trades, {} snapshots", 
-                  self.trades.len(), self.snapshots.len());
+        log::info!(
+            "✅ Loaded database: {} trades, {} snapshots",
+            self.trades.len(),
+            self.snapshots.len()
+        );
         Ok(())
     }
 
@@ -243,7 +246,9 @@ impl Database {
 
     /// Export data to CSV
     pub fn export_trades_csv(&self, path: &Path) -> Result<(), String> {
-        let mut csv = String::from("timestamp,symbol,action,price,size,total_value,fee,pnl,confidence,strategy\n");
+        let mut csv = String::from(
+            "timestamp,symbol,action,price,size,total_value,fee,pnl,confidence,strategy\n",
+        );
 
         for trade in &self.trades {
             csv.push_str(&format!(
@@ -261,10 +266,13 @@ impl Database {
             ));
         }
 
-        std::fs::write(path, csv)
-            .map_err(|e| format!("Failed to export CSV: {}", e))?;
+        std::fs::write(path, csv).map_err(|e| format!("Failed to export CSV: {}", e))?;
 
-        log::info!("📊 Exported {} trades to CSV: {:?}", self.trades.len(), path);
+        log::info!(
+            "📊 Exported {} trades to CSV: {:?}",
+            self.trades.len(),
+            path
+        );
         Ok(())
     }
 }
@@ -304,7 +312,7 @@ mod tests {
     #[test]
     fn test_insert_and_retrieve_trade() {
         let mut db = Database::new("/tmp/test_trade_db.json");
-        
+
         let trade = TradeRecord {
             id: "test_1".to_string(),
             timestamp: 1699876543,
@@ -330,7 +338,7 @@ mod tests {
     #[test]
     fn test_statistics_calculation() {
         let mut db = Database::new("/tmp/test_stats_db.json");
-        
+
         // Add winning trade
         db.insert_trade(TradeRecord {
             id: "1".to_string(),
@@ -344,7 +352,8 @@ mod tests {
             pnl: 10.0,
             confidence: 0.8,
             strategy: "test".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
 
         // Add losing trade
         db.insert_trade(TradeRecord {
@@ -359,7 +368,8 @@ mod tests {
             pnl: -5.0,
             confidence: 0.6,
             strategy: "test".to_string(),
-        }).unwrap();
+        })
+        .unwrap();
 
         let stats = db.get_statistics();
         assert_eq!(stats.total_trades, 2);

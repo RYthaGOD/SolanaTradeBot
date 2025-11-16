@@ -44,11 +44,11 @@ pub struct Usage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TradingDecision {
-    pub action: String,          // "BUY", "SELL", "HOLD"
-    pub confidence: f64,          // 0.0 - 1.0
+    pub action: String,  // "BUY", "SELL", "HOLD"
+    pub confidence: f64, // 0.0 - 1.0
     pub reasoning: String,
-    pub risk_assessment: String,  // "LOW", "MEDIUM", "HIGH"
-    pub suggested_size: f64,      // Percentage of capital (0-100)
+    pub risk_assessment: String, // "LOW", "MEDIUM", "HIGH"
+    pub suggested_size: f64,     // Percentage of capital (0-100)
     pub stop_loss: Option<f64>,
     pub take_profit: Option<f64>,
 }
@@ -82,31 +82,46 @@ impl DeepSeekClient {
     ) -> Result<TradingDecision, Box<dyn Error>> {
         // Calculate technical indicators
         let sma_10 = if price_history.len() >= 10 {
-            price_history[price_history.len() - 10..].iter().sum::<f64>() / 10.0
+            price_history[price_history.len() - 10..]
+                .iter()
+                .sum::<f64>()
+                / 10.0
         } else {
             current_price
         };
 
         let sma_20 = if price_history.len() >= 20 {
-            price_history[price_history.len() - 20..].iter().sum::<f64>() / 20.0
+            price_history[price_history.len() - 20..]
+                .iter()
+                .sum::<f64>()
+                / 20.0
         } else {
             current_price
         };
 
         let price_change = if price_history.len() >= 2 {
-            ((current_price - price_history[price_history.len() - 2]) / price_history[price_history.len() - 2]) * 100.0
+            ((current_price - price_history[price_history.len() - 2])
+                / price_history[price_history.len() - 2])
+                * 100.0
         } else {
             0.0
         };
 
         let avg_volume = if volume_history.len() >= 10 {
-            volume_history[volume_history.len() - 10..].iter().sum::<f64>() / 10.0
+            volume_history[volume_history.len() - 10..]
+                .iter()
+                .sum::<f64>()
+                / 10.0
         } else {
             volume_history.last().copied().unwrap_or(0.0)
         };
 
         // Build context for AI
-        let trend_signal = if current_price > sma_20 { "Bullish" } else { "Bearish" };
+        let trend_signal = if current_price > sma_20 {
+            "Bullish"
+        } else {
+            "Bearish"
+        };
         let volume_signal = if volume_history.last().copied().unwrap_or(0.0) > avg_volume {
             "Above Average (Strong)"
         } else {
@@ -215,9 +230,12 @@ Respond ONLY with valid JSON, no additional text."#,
         }
 
         let content = &deepseek_response.choices[0].message.content;
-        
-        log::info!("DeepSeek AI response for {}: {} tokens used", 
-                  symbol, deepseek_response.usage.total_tokens);
+
+        log::info!(
+            "DeepSeek AI response for {}: {} tokens used",
+            symbol,
+            deepseek_response.usage.total_tokens
+        );
         log::debug!("AI Decision: {}", content);
 
         // Parse JSON response
@@ -289,7 +307,7 @@ Provide a brief risk assessment (LOW, MEDIUM, or HIGH) with reasoning in 1-2 sen
         }
 
         let deepseek_response: DeepSeekResponse = response.json().await?;
-        
+
         Ok(deepseek_response.choices[0].message.content.clone())
     }
 }
@@ -308,7 +326,10 @@ mod tests {
     fn test_deepseek_client_creation() {
         let client = DeepSeekClient::new("test_api_key".to_string());
         assert_eq!(client.model, "deepseek-chat");
-        assert_eq!(client.api_url, "https://api.deepseek.com/v1/chat/completions");
+        assert_eq!(
+            client.api_url,
+            "https://api.deepseek.com/v1/chat/completions"
+        );
     }
 
     #[test]

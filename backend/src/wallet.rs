@@ -1,9 +1,9 @@
 use solana_sdk::{
-    signature::{Keypair, Signer},
     pubkey::Pubkey,
+    signature::{Keypair, Signer},
 };
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 /// Wallet manager for Solana operations
 pub struct Wallet {
@@ -25,7 +25,10 @@ impl Wallet {
             .map_err(|e| format!("Failed to decode base58 key: {}", e))?;
 
         if decoded.len() != 64 {
-            return Err(format!("Invalid key length: {} (expected 64)", decoded.len()));
+            return Err(format!(
+                "Invalid key length: {} (expected 64)",
+                decoded.len()
+            ));
         }
 
         let keypair = Keypair::from_bytes(&decoded)
@@ -41,37 +44,48 @@ impl Wallet {
             return Err(format!("Wallet file not found: {:?}", path));
         }
 
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read wallet file: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read wallet file: {}", e))?;
 
         let key_bytes: Vec<u8> = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse wallet JSON: {}", e))?;
 
         if key_bytes.len() != 64 {
-            return Err(format!("Invalid key length: {} (expected 64)", key_bytes.len()));
+            return Err(format!(
+                "Invalid key length: {} (expected 64)",
+                key_bytes.len()
+            ));
         }
 
         let keypair = Keypair::from_bytes(&key_bytes)
             .map_err(|e| format!("Failed to create keypair: {}", e))?;
 
-        log::info!("🔑 Loaded wallet from file {:?}: {}", path, keypair.pubkey());
+        log::info!(
+            "🔑 Loaded wallet from file {:?}: {}",
+            path,
+            keypair.pubkey()
+        );
         Ok(Self { keypair })
     }
 
     /// Load wallet from environment variable or generate new one
     pub fn from_env_or_new(env_var: &str) -> Self {
         match std::env::var(env_var) {
-            Ok(key) => {
-                match Self::from_base58(&key) {
-                    Ok(wallet) => wallet,
-                    Err(e) => {
-                        log::warn!("Failed to load wallet from env: {}. Generating new wallet.", e);
-                        Self::new()
-                    }
+            Ok(key) => match Self::from_base58(&key) {
+                Ok(wallet) => wallet,
+                Err(e) => {
+                    log::warn!(
+                        "Failed to load wallet from env: {}. Generating new wallet.",
+                        e
+                    );
+                    Self::new()
                 }
-            }
+            },
             Err(_) => {
-                log::info!("No wallet in environment variable {}. Generating new wallet.", env_var);
+                log::info!(
+                    "No wallet in environment variable {}. Generating new wallet.",
+                    env_var
+                );
                 Self::new()
             }
         }
@@ -98,8 +112,7 @@ impl Wallet {
         let json = serde_json::to_string_pretty(&key_bytes.to_vec())
             .map_err(|e| format!("Failed to serialize key: {}", e))?;
 
-        fs::write(path, json)
-            .map_err(|e| format!("Failed to write wallet file: {}", e))?;
+        fs::write(path, json).map_err(|e| format!("Failed to write wallet file: {}", e))?;
 
         // Set restrictive permissions on Unix systems
         #[cfg(unix)]
@@ -147,7 +160,7 @@ mod tests {
         let wallet = Wallet::new();
         let base58 = wallet.to_base58();
         assert!(!base58.is_empty());
-        
+
         // Should be able to load it back
         let wallet2 = Wallet::from_base58(&base58).unwrap();
         assert_eq!(wallet.pubkey(), wallet2.pubkey());
@@ -163,12 +176,12 @@ mod tests {
     fn test_save_and_load_file() {
         let wallet = Wallet::new();
         let path = PathBuf::from("/tmp/test_wallet.json");
-        
+
         wallet.save_to_file(&path).unwrap();
         let wallet2 = Wallet::from_file(&path).unwrap();
-        
+
         assert_eq!(wallet.pubkey(), wallet2.pubkey());
-        
+
         // Cleanup
         let _ = fs::remove_file(path);
     }

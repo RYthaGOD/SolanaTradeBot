@@ -28,8 +28,7 @@ impl KeyManager {
 
     /// Load wallet from environment variable
     pub fn load_from_env(&self, env_var: &str) -> Result<String, String> {
-        std::env::var(env_var)
-            .map_err(|_| format!("Environment variable {} not found", env_var))
+        std::env::var(env_var).map_err(|_| format!("Environment variable {} not found", env_var))
     }
 
     /// Load wallet from file (JSON format)
@@ -38,15 +37,18 @@ impl KeyManager {
             return Err(format!("Wallet file not found: {:?}", path));
         }
 
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read wallet file: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("Failed to read wallet file: {}", e))?;
 
         // Parse JSON array of bytes
         let key_bytes: Vec<u8> = serde_json::from_str(&content)
             .map_err(|e| format!("Failed to parse wallet JSON: {}", e))?;
 
         if key_bytes.len() != 64 {
-            return Err(format!("Invalid key length: {} (expected 64)", key_bytes.len()));
+            return Err(format!(
+                "Invalid key length: {} (expected 64)",
+                key_bytes.len()
+            ));
         }
 
         log::info!("✅ Loaded wallet from file: {:?}", path);
@@ -62,8 +64,7 @@ impl KeyManager {
         let json = serde_json::to_string_pretty(&key_bytes)
             .map_err(|e| format!("Failed to serialize key: {}", e))?;
 
-        fs::write(path, json)
-            .map_err(|e| format!("Failed to write wallet file: {}", e))?;
+        fs::write(path, json).map_err(|e| format!("Failed to write wallet file: {}", e))?;
 
         // Set restrictive permissions on Unix systems
         #[cfg(unix)]
@@ -174,7 +175,8 @@ impl WalletManager {
 
     /// Get the default wallet (first one added or named "default")
     pub fn get_default_wallet(&self) -> Option<&WalletConfig> {
-        self.wallets.get("default")
+        self.wallets
+            .get("default")
             .or_else(|| self.wallets.values().next())
     }
 }
@@ -212,7 +214,7 @@ mod tests {
     #[test]
     fn test_validate_base58_key() {
         let km = KeyManager::new(false);
-        
+
         // Valid base58 string
         let valid_key = "5J3mBbAH58CpQ3Y5RNJpUKPE62SQ5tfcvU2JpbnkeyhfsYB1Jcn";
         assert!(km.validate_base58_key(valid_key).is_ok());
@@ -225,7 +227,7 @@ mod tests {
     #[test]
     fn test_wallet_manager() {
         let mut manager = WalletManager::new();
-        
+
         let config = WalletConfig {
             address: "test_address".to_string(),
             encrypted_key: "test_key".to_string(),
@@ -233,10 +235,10 @@ mod tests {
         };
 
         manager.add_wallet("test".to_string(), config.clone());
-        
+
         assert_eq!(manager.list_wallets().len(), 1);
         assert!(manager.get_wallet("test").is_some());
-        
+
         assert!(manager.remove_wallet("test"));
         assert_eq!(manager.list_wallets().len(), 0);
     }
@@ -245,7 +247,7 @@ mod tests {
     fn test_encryption_key_generation() {
         let key1 = KeyManager::generate_encryption_key();
         let key2 = KeyManager::generate_encryption_key();
-        
+
         // Keys should be different
         assert_ne!(key1, key2);
     }
@@ -254,7 +256,7 @@ mod tests {
     fn test_derive_address() {
         let public_key = vec![1u8; 32];
         let address = KeyManager::derive_address(&public_key);
-        
+
         // Should return a base58 encoded string
         assert!(!address.is_empty());
     }

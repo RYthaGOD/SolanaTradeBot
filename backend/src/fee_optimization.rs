@@ -5,11 +5,11 @@ use std::time::Duration;
 /// Fee estimation based on network congestion
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeeEstimate {
-    pub min_fee: u64,           // Minimum fee in lamports
-    pub recommended_fee: u64,   // Recommended fee for normal priority
-    pub priority_fee: u64,      // Fee for high priority
-    pub max_fee: u64,          // Maximum reasonable fee
-    pub confidence: f64,        // 0.0-1.0 confidence in estimate
+    pub min_fee: u64,         // Minimum fee in lamports
+    pub recommended_fee: u64, // Recommended fee for normal priority
+    pub priority_fee: u64,    // Fee for high priority
+    pub max_fee: u64,         // Maximum reasonable fee
+    pub confidence: f64,      // 0.0-1.0 confidence in estimate
 }
 
 /// Network congestion levels
@@ -42,7 +42,8 @@ impl FeeOptimizer {
     /// Record a successful transaction with its fee and confirmation time
     pub fn record_transaction(&mut self, fee: u64, confirmation_time: Duration) {
         self.recent_fees.push_back(fee);
-        self.recent_confirmations.push_back((fee, confirmation_time));
+        self.recent_confirmations
+            .push_back((fee, confirmation_time));
 
         if self.recent_fees.len() > self.max_history {
             self.recent_fees.pop_front();
@@ -52,8 +53,11 @@ impl FeeOptimizer {
             self.recent_confirmations.pop_front();
         }
 
-        log::debug!("Recorded transaction: fee={} lamports, confirmation={:?}", 
-                   fee, confirmation_time);
+        log::debug!(
+            "Recorded transaction: fee={} lamports, confirmation={:?}",
+            fee,
+            confirmation_time
+        );
     }
 
     /// Get current fee estimate based on recent transactions
@@ -95,11 +99,12 @@ impl FeeOptimizer {
         }
 
         // Calculate average confirmation time
-        let total_time: Duration = self.recent_confirmations
+        let total_time: Duration = self
+            .recent_confirmations
             .iter()
             .map(|(_, time)| *time)
             .sum();
-        
+
         let avg_time = total_time / self.recent_confirmations.len() as u32;
 
         // Classify congestion based on confirmation times
@@ -125,7 +130,7 @@ impl FeeOptimizer {
     fn calculate_confidence(&self) -> f64 {
         // Confidence increases with more data points
         let sample_confidence = (self.recent_fees.len() as f64 / self.max_history as f64).min(1.0);
-        
+
         // Reduce confidence if fees are highly variable
         let variance = self.calculate_fee_variance();
         let variance_penalty = if variance > 0.5 { 0.7 } else { 1.0 };
@@ -140,13 +145,15 @@ impl FeeOptimizer {
         }
 
         let avg = self.calculate_average_fee() as f64;
-        let variance: f64 = self.recent_fees
+        let variance: f64 = self
+            .recent_fees
             .iter()
             .map(|&fee| {
                 let diff = fee as f64 - avg;
                 diff * diff
             })
-            .sum::<f64>() / self.recent_fees.len() as f64;
+            .sum::<f64>()
+            / self.recent_fees.len() as f64;
 
         let std_dev = variance.sqrt();
         std_dev / avg // Coefficient of variation
@@ -167,12 +174,22 @@ impl FeeOptimizer {
     pub fn get_stats(&self) -> FeeStats {
         let congestion = self.detect_congestion();
         let avg_time = self.calculate_avg_confirmation_time();
-        
+
         FeeStats {
             total_transactions: self.recent_fees.len(),
             average_fee: self.calculate_average_fee(),
-            min_fee: self.recent_fees.iter().min().copied().unwrap_or(self.base_fee),
-            max_fee: self.recent_fees.iter().max().copied().unwrap_or(self.base_fee),
+            min_fee: self
+                .recent_fees
+                .iter()
+                .min()
+                .copied()
+                .unwrap_or(self.base_fee),
+            max_fee: self
+                .recent_fees
+                .iter()
+                .max()
+                .copied()
+                .unwrap_or(self.base_fee),
             congestion_level: format!("{:?}", congestion),
             avg_confirmation_time: format!("{:.2}s", avg_time.as_secs_f64()),
         }
@@ -183,20 +200,21 @@ impl FeeOptimizer {
             return Duration::from_secs(0);
         }
 
-        let total: Duration = self.recent_confirmations
+        let total: Duration = self
+            .recent_confirmations
             .iter()
             .map(|(_, time)| *time)
             .sum();
-        
+
         total / self.recent_confirmations.len() as u32
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum FeePriority {
-    Low,      // Economy mode
-    Normal,   // Standard priority
-    High,     // Fast confirmation
+    Low,    // Economy mode
+    Normal, // Standard priority
+    High,   // Fast confirmation
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -220,8 +238,6 @@ impl From<CongestionLevel> for String {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,7 +252,7 @@ mod tests {
     fn test_default_estimate() {
         let optimizer = FeeOptimizer::new(5000);
         let estimate = optimizer.estimate_fee(FeePriority::Normal);
-        
+
         assert_eq!(estimate.min_fee, 5000);
         assert!(estimate.recommended_fee >= estimate.min_fee);
     }
@@ -244,11 +260,11 @@ mod tests {
     #[test]
     fn test_congestion_detection() {
         let mut optimizer = FeeOptimizer::new(5000);
-        
+
         // Simulate fast confirmations
         optimizer.record_transaction(5000, Duration::from_secs(3));
         optimizer.record_transaction(5000, Duration::from_secs(4));
-        
+
         assert_eq!(optimizer.detect_congestion(), CongestionLevel::Low);
     }
 
