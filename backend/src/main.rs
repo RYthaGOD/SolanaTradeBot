@@ -28,6 +28,7 @@ mod quant_analysis;
 mod jito_bam;
 mod ai_orchestrator;
 mod api_v2;
+mod prediction_markets;
 
 #[cfg(test)]
 mod algorithm_tests;
