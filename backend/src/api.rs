@@ -62,6 +62,12 @@ pub async fn start_server(
     let use_mainnet = rpc_url.contains("mainnet");
     let jito_client = Arc::new(crate::jito_bam::JitoBamClient::new(use_mainnet));
     
+    // Create Prediction Market client
+    let use_real_prediction_data = std::env::var("USE_REAL_PREDICTION_DATA").is_ok();
+    let prediction_market_client = Arc::new(tokio::sync::Mutex::new(
+        crate::prediction_markets::PredictionMarketClient::new(use_real_prediction_data)
+    ));
+    
     let cors = crate::security::cors_config();
     
     let health = warp::path("health")
@@ -1000,6 +1006,140 @@ pub async fn start_server(
             })
     };
     
+    // Prediction Markets routes
+    let prediction_markets_route = {
+        let client = prediction_market_client.clone();
+        
+        warp::path!("prediction-markets")
+            .and(warp::get())
+            .and_then(move || {
+                let client = client.clone();
+                async move {
+                    let client_lock = client.lock().await;
+                    let markets = client_lock.get_active_markets().await;
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        markets,
+                        "Active prediction markets retrieved"
+                    )))
+                }
+            })
+    };
+
+    let prediction_market_detail_route = {
+        let client = prediction_market_client.clone();
+        
+        warp::path!("prediction-markets" / String)
+            .and(warp::get())
+            .and_then(move |market_id: String| {
+                let client = client.clone();
+                async move {
+                    let client_lock = client.lock().await;
+                    match client_lock.get_market(&market_id).await {
+                        Some(market) => {
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                market,
+                                "Market details retrieved"
+                            )))
+                        }
+                        None => {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                String::new(),
+                                "Market not found"
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+
+    let prediction_market_stats_route = {
+        let client = prediction_market_client.clone();
+        
+        warp::path!("prediction-markets" / "stats")
+            .and(warp::get())
+            .and_then(move || {
+                let client = client.clone();
+                async move {
+                    let client_lock = client.lock().await;
+                    let stats = client_lock.get_market_stats().await;
+                    Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                        stats,
+                        "Market statistics retrieved"
+                    )))
+                }
+            })
+    };
+
+    let prediction_signals_route = {
+        let client = prediction_market_client.clone();
+        
+        warp::path!("prediction-markets" / "signals" / String)
+            .and(warp::get())
+            .and_then(move |market_id: String| {
+                let client = client.clone();
+                async move {
+                    let client_lock = client.lock().await;
+                    match client_lock.analyze_market(&market_id).await {
+                        Ok(signals) => {
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                signals,
+                                "Market signals generated"
+                            )))
+                        }
+                        Err(e) => {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                Vec::<String>::new(),
+                                &format!("Failed to analyze market: {}", e)
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+
+    let prediction_trade_route = {
+        let client = prediction_market_client.clone();
+        
+        warp::path!("prediction-markets" / "trade")
+            .and(warp::post())
+            .and(warp::body::json())
+            .and_then(move |body: HashMap<String, String>| {
+                let client = client.clone();
+                async move {
+                    let market_id = body.get("market_id").cloned().unwrap_or_default();
+                    let outcome_id = body.get("outcome_id").cloned().unwrap_or_default();
+                    let action_str = body.get("action").cloned().unwrap_or_default();
+                    let amount: f64 = body.get("amount")
+                        .and_then(|a| a.parse().ok())
+                        .unwrap_or(0.0);
+                    
+                    let action = match action_str.as_str() {
+                        "buy_yes" => crate::prediction_markets::SignalAction::BuyYes,
+                        "sell_yes" => crate::prediction_markets::SignalAction::SellYes,
+                        "buy_no" => crate::prediction_markets::SignalAction::BuyNo,
+                        "sell_no" => crate::prediction_markets::SignalAction::SellNo,
+                        _ => crate::prediction_markets::SignalAction::Hold,
+                    };
+                    
+                    let mut client_lock = client.lock().await;
+                    match client_lock.execute_trade(&market_id, &outcome_id, &action, amount).await {
+                        Ok(trade_id) => {
+                            Ok::<_, warp::Rejection>(warp::reply::json(&ApiResponse::new(
+                                trade_id,
+                                "Trade executed successfully"
+                            )))
+                        }
+                        Err(e) => {
+                            Ok(warp::reply::json(&ApiResponse::new(
+                                String::new(),
+                                &format!("Trade failed: {}", e)
+                            )))
+                        }
+                    }
+                }
+            })
+    };
+
     let routes = health
         .or(portfolio_route)
         .or(performance_route)
@@ -1032,6 +1172,11 @@ pub async fn start_server(
         .or(withdraw_route)
         .or(quant_analysis_route)
         .or(quant_overview_route)
+        .or(prediction_markets_route)
+        .or(prediction_market_detail_route)
+        .or(prediction_market_stats_route)
+        .or(prediction_signals_route)
+        .or(prediction_trade_route)
         .with(cors)
         .with(warp::log("api"));
     

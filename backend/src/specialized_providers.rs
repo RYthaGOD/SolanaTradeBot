@@ -19,6 +19,7 @@ pub enum ProviderType {
     OpportunityAnalyzer,
     SignalTrader,
     MasterAnalyzer,
+    PredictionMarkets,
 }
 
 /// Specialized provider agent with RL integration
@@ -117,6 +118,10 @@ impl SpecializedProvider {
             ProviderType::MasterAnalyzer => {
                 // Master analyzer analyzes all provider data
                 self.generate_master_analysis_signals().await?
+            }
+            ProviderType::PredictionMarkets => {
+                // Prediction markets provider
+                self.generate_prediction_market_signals().await?
             }
         };
 
@@ -801,6 +806,76 @@ impl SpecializedProvider {
         self.rl_agent.record_experience(experience).await;
         log::info!("🧠 {} learned from {} trade: reward={:.3}", self.provider_name, symbol, reward);
     }
+
+    /// Provider 7: Prediction Markets - Analyzes prediction markets for value opportunities
+    async fn generate_prediction_market_signals(&self) -> Result<Vec<TradingSignalData>, String> {
+        let mut signals = Vec::new();
+        
+        // Create prediction market client
+        let pred_client = crate::prediction_markets::PredictionMarketClient::new(false);
+        
+        // Get active markets
+        let markets = pred_client.get_active_markets().await;
+        
+        for market in markets {
+            // Analyze each market for trading opportunities
+            match pred_client.analyze_market(&market.market_id).await {
+                Ok(pred_signals) => {
+                    for pred_signal in pred_signals {
+                        // Convert prediction signal to trading signal
+                        if pred_signal.confidence > 0.6 && pred_signal.expected_value.abs() > 0.05 {
+                            let symbol = format!("PRED-{}", market.question.chars().take(20).collect::<String>());
+                            
+                            let action = match pred_signal.action {
+                                crate::prediction_markets::SignalAction::BuyYes | 
+                                crate::prediction_markets::SignalAction::BuyNo => SignalAction::Buy,
+                                crate::prediction_markets::SignalAction::SellYes | 
+                                crate::prediction_markets::SignalAction::SellNo => SignalAction::Sell,
+                                _ => SignalAction::Hold,
+                            };
+                            
+                            // Calculate entry/target based on Kelly criterion
+                            let position_size = pred_signal.kelly_fraction;
+                            let entry_price = pred_signal.target_price;
+                            let expected_payout = 1.0 / entry_price;
+                            
+                            let signal = TradingSignalData {
+                                id: uuid::Uuid::new_v4().to_string(),
+                                provider: self.provider_id.clone(),
+                                symbol: symbol.clone(),
+                                action,
+                                entry_price,
+                                target_price: entry_price * expected_payout, // Expected payout
+                                stop_loss: entry_price * 0.90, // 10% stop loss
+                                confidence: pred_signal.confidence,
+                                timeframe: "30d".to_string(),
+                                data_sources: vec!["Prediction Markets".to_string(), "EV Analysis".to_string()],
+                                analysis: format!(
+                                    "Prediction Market: {} | {} | EV: {:.2}% | Kelly: {:.1}% | {:?}",
+                                    market.question,
+                                    pred_signal.reasoning,
+                                    pred_signal.expected_value * 100.0,
+                                    position_size * 100.0,
+                                    market.category
+                                ),
+                                timestamp: Utc::now().timestamp(),
+                                expiry: market.end_date,
+                                price: 30.0, // Premium for prediction market signals
+                                status: SignalStatus::Active,
+                            };
+                            
+                            signals.push(signal);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to analyze prediction market {}: {}", market.market_id, e);
+                }
+            }
+        }
+        
+        Ok(signals)
+    }
 }
 
 /// Helper struct for symbol analysis
@@ -854,6 +929,11 @@ pub async fn initialize_all_providers(
             "Master Analyzer".to_string(),
             ProviderType::MasterAnalyzer,
         ),
+        (
+            "prediction_markets".to_string(),
+            "Prediction Markets".to_string(),
+            ProviderType::PredictionMarkets,
+        ),
     ];
 
     let mut provider_agents = Vec::new();
@@ -892,7 +972,9 @@ mod tests {
             ProviderType::PerpsMonitor,
             ProviderType::OpportunityAnalyzer,
             ProviderType::SignalTrader,
+            ProviderType::MasterAnalyzer,
+            ProviderType::PredictionMarkets,
         ];
-        assert_eq!(types.len(), 5);
+        assert_eq!(types.len(), 7);
     }
 }
