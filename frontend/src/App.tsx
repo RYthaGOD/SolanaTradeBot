@@ -7,6 +7,7 @@ import AIOrchestrator from './components/AIOrchestrator'
 import RLAgents from './components/RLAgents'
 import X402Marketplace from './components/X402Marketplace'
 import MemeAnalyzer from './components/MemeAnalyzer'
+import PredictionMarkets from './components/PredictionMarkets'
 import axios from 'axios'
 
 function App() {
@@ -58,6 +59,7 @@ function App() {
     { id: 'performance', icon: '📈', name: 'Performance', color: '#ff5500' },
     { id: 'x402', icon: '📡', name: 'X402 Market', color: '#aa00ff' },
     { id: 'meme', icon: '🎪', name: 'Meme Coins', color: '#ff0099' },
+    { id: 'prediction', icon: '🔮', name: 'Prediction Markets', color: '#4ade80' },
   ]
 
   return (
@@ -126,6 +128,7 @@ function App() {
           {activeTab === 'performance' && <Performance />}
           {activeTab === 'x402' && <X402Marketplace />}
           {activeTab === 'meme' && <MemeAnalyzer />}
+          {activeTab === 'prediction' && <PredictionMarkets />}
         </div>
       </main>
 

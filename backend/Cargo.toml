@@ -8,6 +8,10 @@ name = "agentburn-backend"
 path = "src/main.rs"
 
 [[bin]]
+name = "prediction-markets"
+path = "src/main_prediction_only.rs"
+
+[[bin]]
 name = "setup_api_key"
 path = "src/bin/setup_api_key.rs"
 
