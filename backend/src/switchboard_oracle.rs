@@ -285,6 +285,9 @@ mod tests {
             confidence: 0.01,
             timestamp: chrono::Utc::now().timestamp(),
             slot: 0,
+            min_price: 99.99,
+            max_price: 100.01,
+            price_change_24h: Some(0.0),
         };
         assert!(SwitchboardClient::is_data_fresh(&feed, 60));
     }
