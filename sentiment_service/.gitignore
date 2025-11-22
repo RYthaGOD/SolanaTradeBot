@@ -1,0 +1,12 @@
+login.csv
+*.pyc
+__pycache__/
+*.csv
+*.log
+.venv/
+venv/
+env/
+*.pth
+*.bin
+models/
+

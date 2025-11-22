@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@switchboard-xyz/on-demand": "^3.7.1"
+  }
+}

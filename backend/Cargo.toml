@@ -1,0 +1,51 @@
+[package]
+name = "agentburn-backend"
+version = "0.1.0"
+edition = "2021"
+default-run = "agentburn-backend"
+
+[[bin]]
+name = "agentburn-backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "setup_api_key"
+path = "src/bin/setup_api_key.rs"
+
+[[bin]]
+name = "backtest"
+path = "src/bin/backtest.rs"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+warp = "0.3"
+futures = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
+tokio-tungstenite = "0.20"
+tungstenite = "0.20"
+base64 = "0.21"
+hex = "0.4"
+rand = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4"] }
+async-trait = "0.1"
+log = "0.4"
+pretty_env_logger = "0.5"
+dotenv = "0.15"
+bs58 = "0.5"
+bincode = "1.3"
+solana-sdk = "1.18"
+solana-client = "1.18"
+solana-program = "1.18"
+switchboard-solana = "0.29"
+anchor-lang = "0.29"
+urlencoding = "2.1"
+scraper = "0.18"
+select = "0.6"
+aes-gcm = "0.10"
+argon2 = "0.5"
+governor = "0.6"
+nonzero = "0.1"
+backoff = "0.4"

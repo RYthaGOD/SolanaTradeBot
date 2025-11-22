@@ -1,0 +1,39 @@
+﻿cargo :     Checking agentburn-backend v0.1.0 
+(C:\Users\craig\OneDrive\Desktop\SolanaTradeBot-copilot-merge-all-branch-code\backend)
+At C:\Users\craig\AppData\Local\Temp\ps-script-7487f11d-1742-4a62-bd3e-1277add7076c.ps1:81 char:1
++ cargo check 2>&1 | Out-File -FilePath warnings.txt -Encoding utf8; Ge ...
++ ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (    Checking ag...h-code\backend):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+error: mismatched closing delimiter: `}`
+   --> src\main.rs:66:50
+    |
+48  | ) {
+    |   - closing delimiter possibly meant for this
+...
+66  |         let result = std::panic::AssertUnwindSafe(async {
+    |                                                  ^ unclosed delimiter
+...
+135 | }
+    | ^ mismatched closing delimiter
+
+error: mismatched closing delimiter: `)`
+   --> src\main.rs:142:3
+    |
+142 | ) {
+    |   ^ unclosed delimiter
+...
+189 |         }).catch_unwind().await;
+    |          ^ mismatched closing delimiter
+
+error: unexpected closing delimiter: `}`
+   --> src\main.rs:211:1
+    |
+189 |         }).catch_unwind().await;
+    |          - missing open `(` for this delimiter
+...
+211 | }
+    | ^ unexpected closing delimiter
+
+error: could not compile `agentburn-backend` (bin "agentburn-backend") due to 3 previous errors
